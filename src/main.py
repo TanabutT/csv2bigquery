@@ -34,8 +34,9 @@ def process_single_file(
         # Construct GCS URI for this file
         gcs_uri = f"gs://{config.get('gcs_bucket')}/{csv_file}"
 
-        # Get dataset name for this service using config template
-        dataset_name = get_dataset_name(config, service)
+        # Get dataset name for this service using config template (with hyphens replaced)
+        service_name_for_dataset = service.replace("-", "_")
+        dataset_name = get_dataset_name(config, service_name_for_dataset).lower()
         table_exists = bq_client.table_exists(dataset_name, table_name)
 
         # Create or update table
@@ -228,6 +229,9 @@ def process_service(
             "files_processed": 0,
         }
 
+    # Filter out prisma files (already done in CSV_reader but adding another filter here for safety)
+    csv_files = [f for f in csv_files if "prisma" not in f.lower()]
+
     results = {
         "service": service,
         "status": "success",
@@ -268,6 +272,11 @@ def process_service(
         ) as executor:
             futures = []
             for csv_file in csv_files:
+                # Skip prisma files
+                if "prisma" in csv_file.lower():
+                    logger.info(f"Skipping prisma file: {csv_file}")
+                    continue
+
                 future = executor.submit(
                     process_single_file, bq_client, config, csv_file, service
                 )
@@ -477,7 +486,9 @@ def validate_results(
     all_services_valid = True
 
     for service in services:
-        dataset_name = get_dataset_name(config, service)
+        # Convert hyphens to underscores for BigQuery dataset naming
+        service_name_for_dataset = service.replace("-", "_")
+        dataset_name = get_dataset_name(config, service_name_for_dataset).lower()
         service_gcs_path = get_gcs_path(config, service, date_folder)
 
         # Run completeness validation
@@ -589,10 +600,13 @@ def main():
         return 1
 
     # Create datasets for all services using config template, change dataset name to lowercase and replace hyphens with underscores by the rule of bigquery naming convention
-    datasets = [
-        get_dataset_name(config, service).lower().replace("-", "_")
-        for service in services
-    ]
+    datasets = []
+    for service in services:
+        # Replace hyphens with underscores for BigQuery dataset naming
+        service_name_for_dataset = service.replace("-", "_")
+        dataset_name = get_dataset_name(config, service_name_for_dataset).lower()
+        logger.info(f"Creating dataset for service {service}: {dataset_name}")
+        datasets.append(dataset_name)
 
     create_datasets(bq_client, datasets)
 

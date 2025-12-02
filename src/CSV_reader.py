@@ -65,7 +65,10 @@ class CSVReader:
 
             blobs = self.bucket.list_blobs(prefix=gcs_path)
             csv_files = [
-                blob.name for blob in blobs if blob.name.lower().endswith(".csv")
+                blob.name
+                for blob in blobs
+                if blob.name.lower().endswith(".csv")
+                and "prisma" not in blob.name.lower()
             ]
 
             logger.info(f"Found {len(csv_files)} CSV files in GCS path: {gcs_path}")
@@ -88,7 +91,7 @@ class CSVReader:
             csv_files = []
             for root, _, files in os.walk(directory_path):
                 for file in files:
-                    if file.lower().endswith(".csv"):
+                    if file.lower().endswith(".csv") and "prisma" not in file.lower():
                         csv_files.append(os.path.join(root, file))
 
             logger.info(
@@ -198,8 +201,10 @@ class CSVReader:
             content = blob.download_as_bytes()
 
             # Use pandas to infer schema
+            from io import StringIO
+
             df = pd.read_csv(
-                pd.compat.StringIO(content.decode("utf-8")),
+                StringIO(content.decode("utf-8")),
                 nrows=sample_size,
                 low_memory=False,
             )
@@ -283,14 +288,21 @@ class CSVReader:
             return pd.DataFrame()
 
         try:
-            # Construct the public URL
-            public_url = f"https://storage.googleapis.com/{self.gcs_bucket}/{gcs_path}"
+            # Download the file content as bytes using the GCS client
+            blob = self.bucket.blob(gcs_path)
+            content = blob.download_as_bytes()
 
-            # Read with pandas
+            # Read with pandas from bytes
+            from io import StringIO
+
             if sample_size:
-                df = pd.read_csv(public_url, nrows=sample_size, low_memory=False)
+                df = pd.read_csv(
+                    StringIO(content.decode("utf-8")),
+                    nrows=sample_size,
+                    low_memory=False,
+                )
             else:
-                df = pd.read_csv(public_url, low_memory=False)
+                df = pd.read_csv(StringIO(content.decode("utf-8")), low_memory=False)
 
             logger.info(f"Read CSV from GCS: {gcs_path}, shape: {df.shape}")
             return df

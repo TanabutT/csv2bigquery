@@ -1,6 +1,6 @@
 {
   "project_id": "poc-piloturl-nonprod",
-  "dataset_name_template": "dev_{service}_service",
+  "dataset_name_template": "dev_{service}",
   "region": "asia-southeast1",
   "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data",
   "csv_source_path": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data/*.csv",
