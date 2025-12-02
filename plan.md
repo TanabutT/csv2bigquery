@@ -20,8 +20,9 @@ CSV2bigquery/
 
 
 ## Implementation Steps
-### 1. git init
-  
+### 1. git init and git ignore
+- Initialize a new Git repository 
+- Create `.gitignore` file to exclude unnecessary files
 ### 2. Setup and Dependencies
 - Create `requirements.txt` with necessary packages:
   - `google-cloud-bigquery`
