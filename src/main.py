@@ -96,6 +96,7 @@ def process_service(
     service: str,
     gcs_base_path: str,
     date_folder: str = "20251201",
+    specific_table: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Process a specific service
@@ -134,6 +135,24 @@ def process_service(
         "files_processed": 0,
         "files_results": [],
     }
+
+    # Filter for specific table if provided
+    if specific_table:
+        csv_files = [
+            f
+            for f in csv_files
+            if os.path.splitext(os.path.basename(f))[0] == specific_table
+        ]
+        if not csv_files:
+            logger.warning(
+                f"No CSV file found for table: {specific_table} in service: {service}"
+            )
+            return {
+                "service": service,
+                "status": "skipped",
+                "message": f"No CSV file found for table: {specific_table}",
+                "files_processed": 0,
+            }
 
     # Process each CSV file
     for csv_file in csv_files:
@@ -197,6 +216,80 @@ def process_service(
             results["message"] = "Some files failed to process"
 
     return results
+
+
+def validate_single_service_table(
+    validator: Validator,
+    config: Dict[str, Any],
+    service: str,
+    table_name: str,
+    gcs_base_path: str,
+    date_folder: str = "20251201",
+) -> Dict[str, Any]:
+    """
+    Validate a specific table in a specific service
+
+    Args:
+        validator: Validator instance
+        config: Configuration dictionary
+        service: Service name
+        table_name: Table name to validate
+        gcs_base_path: Base path in GCS
+        date_folder: Date folder for the export
+
+    Returns:
+        Dictionary with validation results
+    """
+    logger.info(f"Starting validation for service: {service}, table: {table_name}")
+
+    dataset_name = f"dev_{service}"
+    service_gcs_path = f"{gcs_base_path}/{service}"
+
+    # Find the CSV file for this specific table
+    csv_files = validator.csv_reader.list_csv_files_in_gcs(service_gcs_path)
+    target_csv = None
+    for csv_file in csv_files:
+        csv_table_name = os.path.splitext(os.path.basename(csv_file))[0]
+        if csv_table_name == table_name:
+            target_csv = csv_file
+            break
+
+    if not target_csv:
+        return {
+            "status": "failed",
+            "message": f"No CSV file found for table: {table_name}",
+            "service": service,
+            "table": table_name,
+        }
+
+    validation_results = {
+        "status": "success",
+        "message": "Validation completed",
+        "service": service,
+        "table": table_name,
+    }
+
+    # Run completeness validation
+    completeness = validator.validate_single_file_completeness(
+        dataset_name, target_csv, table_name
+    )
+
+    # Run correctness validation
+    correctness = validator.validate_single_file_correctness(
+        dataset_name, target_csv, table_name
+    )
+
+    validation_results["completeness"] = completeness
+    validation_results["correctness"] = correctness
+
+    if (
+        completeness.get("status") != "success"
+        or correctness.get("status") != "success"
+    ):
+        validation_results["status"] = "warning"
+        validation_results["message"] = "Validation issues found"
+
+    return validation_results
 
 
 def validate_results(
@@ -281,9 +374,18 @@ def main():
         help="Process only the specified service (if not provided, all services are processed)",
     )
     parser.add_argument(
+        "--table",
+        help="Process only the specified table in the specified service (requires --service)",
+    )
+    parser.add_argument(
         "--date",
         default="20251201",
         help="Date folder for the export (default: 20251201)",
+    )
+    parser.add_argument(
+        "--rerun",
+        action="store_true",
+        help="Rerun processing for a specific service or table (requires --service, optionally --table)",
     )
 
     args = parser.parse_args()
@@ -321,7 +423,16 @@ def main():
         services = [args.service]
 
     # Construct GCS base path
-    gcs_base_path = f"sql-exports-parquet/{args.date}/parquetextract"
+    gcs_base_path = f"sql-exports/{args.date}/parquetextract"
+
+    # Validate arguments
+    if args.table and not args.service:
+        logger.error("--table requires --service to be specified")
+        return 1
+
+    if args.rerun and not args.service:
+        logger.error("--rerun requires --service to be specified")
+        return 1
 
     # Create datasets for all services
     datasets = [f"dev_{service}" for service in services]
@@ -334,15 +445,29 @@ def main():
         logger.info("Starting data processing")
 
         for service in services:
+            specific_table = args.table if args.rerun else None
             result = process_service(
-                bq_client, csv_reader, config, service, gcs_base_path, args.date
+                bq_client,
+                csv_reader,
+                config,
+                service,
+                gcs_base_path,
+                args.date,
+                specific_table,
             )
             processing_results[service] = result
 
     # Validate results
-    validation_results = validate_results(
-        validator, config, services, gcs_base_path, args.date
-    )
+    if args.rerun and args.table:
+        # Validate only the specific table
+        validation_results = validate_single_service_table(
+            validator, config, args.service, args.table, gcs_base_path, args.date
+        )
+    else:
+        # Validate all services
+        validation_results = validate_results(
+            validator, config, services, gcs_base_path, args.date
+        )
 
     # Generate report
     report = {
@@ -350,6 +475,8 @@ def main():
         "date": args.date,
         "validate_only": args.validate_only,
         "services_processed": services,
+        "rerun": args.rerun,
+        "specific_table": args.table if args.rerun else None,
         "processing_results": processing_results,
         "validation_results": validation_results,
     }
@@ -369,8 +496,13 @@ def main():
         )
 
     logger.info("=== Validation Summary ===")
-    for service, result in validation_results.get("services", {}).items():
-        logger.info(f"Service: {service}, Status: {result.get('status')}")
+    if args.rerun and args.table:
+        logger.info(
+            f"Service: {args.service}, Table: {args.table}, Status: {validation_results.get('status')}"
+        )
+    else:
+        for service, result in validation_results.get("services", {}).items():
+            logger.info(f"Service: {service}, Status: {result.get('status')}")
 
     return 0
 

@@ -418,6 +418,103 @@ class Validator:
 
         return "\n".join(report)
 
+    def validate_single_file_completeness(
+        self, dataset_name: str, gcs_path: str, table_name: str
+    ) -> Dict[str, Any]:
+        """
+        Validate completeness for a single file
+
+        Args:
+            dataset_name: BigQuery dataset name
+            gcs_path: GCS path to the CSV file
+            table_name: BigQuery table name
+
+        Returns:
+            Dictionary with validation results
+        """
+        logger.info(f"Starting completeness validation for table: {table_name}")
+
+        # Get row count from CSV
+        csv_row_count = self.csv_reader.get_row_count_gcs(gcs_path)
+
+        # Get row count from BigQuery
+        bq_row_count = self.bigquery_client.get_row_count(dataset_name, table_name)
+
+        # Check if table exists
+        table_exists = self.bigquery_client.table_exists(dataset_name, table_name)
+
+        # Check if row counts match
+        rows_match = csv_row_count == bq_row_count
+
+        results = {
+            "status": "success" if rows_match else "failed",
+            "message": "Completeness validation completed"
+            if rows_match
+            else f"Row count mismatch: CSV={csv_row_count}, BQ={bq_row_count}",
+            "file_path": gcs_path,
+            "table_name": table_name,
+            "table_exists": table_exists,
+            "csv_rows": csv_row_count,
+            "bq_rows": bq_row_count,
+            "rows_match": rows_match,
+        }
+
+        return results
+
+    def validate_single_file_correctness(
+        self, dataset_name: str, gcs_path: str, table_name: str
+    ) -> Dict[str, Any]:
+        """
+        Validate correctness for a single file
+
+        Args:
+            dataset_name: BigQuery dataset name
+            gcs_path: GCS path to the CSV file
+            table_name: BigQuery table name
+
+        Returns:
+            Dictionary with validation results
+        """
+        logger.info(f"Starting correctness validation for table: {table_name}")
+
+        # Skip if table doesn't exist
+        if not self.bigquery_client.table_exists(dataset_name, table_name):
+            return {
+                "status": "failed",
+                "message": f"Table {dataset_name}.{table_name} does not exist",
+                "file_path": gcs_path,
+                "table_name": table_name,
+            }
+
+        # Get schemas and compare
+        csv_schema = self.csv_reader.extract_schema_from_csv_gcs(gcs_path)
+        bq_table_info = self.bigquery_client.get_table_info(dataset_name, table_name)
+        bq_schema = {
+            field["name"]: field["type"] for field in bq_table_info.get("schema", [])
+        }
+
+        # Check if schemas match
+        schema_match = self._compare_schemas(csv_schema, bq_schema)
+
+        # Sample rows and compare values
+        sample_valid = self._compare_sample_data_gcs(dataset_name, table_name, gcs_path)
+
+        results = {
+            "status": "success" if schema_match and sample_valid else "warning",
+            "message": "Correctness validation completed",
+            "file_path": gcs_path,
+            "table_name": table_name,
+            "schema_match": schema_match,
+            "sample_match": sample_valid,
+        }
+
+        if not schema_match:
+            results["message"] += ". Schema mismatch found."
+        if not sample_valid:
+            results["message"] += ". Sample data mismatch found."
+
+        return results
+
     def _extract_table_name_from_path(self, file_path: str) -> Optional[str]:
         """Extract table name from file path"""
         import os

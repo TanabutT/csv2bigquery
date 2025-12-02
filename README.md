@@ -15,6 +15,8 @@ The application automates the process of extracting data from CSV files stored i
 - Generates detailed reports of processing and validation results
 - Configurable service account authentication
 - Supports multiple services/datasets in a single run
+- **NEW:** Rerun specific services or tables with the --rerun flag
+- **NEW:** Target specific tables within a service for focused processing or validation
 
 ## Project Structure
 
@@ -122,12 +124,31 @@ Use a custom configuration file:
 python src/main.py --config /path/to/config.json
 ```
 
+### Advanced Usage (New Features)
+
+Rerun a specific service:
+```bash
+python src/main.py --service career-service --rerun
+```
+
+Rerun a specific table within a service:
+```bash
+python src/main.py --service career-service --table users --rerun
+```
+
+Validate only a specific table:
+```bash
+python src/main.py --service career-service --table users --validate-only --rerun
+```
+
 ### Command Line Options
 
 - `--config`: Path to configuration file (default: config.json)
 - `--validate-only`: Only run validation, skip data processing
 - `--service`: Process only the specified service
+- `--table`: Process only the specified table in the specified service
 - `--date`: Date folder for the export (default: 20251201)
+- `--rerun`: Rerun processing for a specific service or table
 
 ## Output
 
