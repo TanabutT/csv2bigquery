@@ -179,10 +179,14 @@ def get_gcs_path(config: Dict[str, Any], service: str, date: str) -> str:
     Returns:
         GCS path string
     """
+    # Transform service name to include dev- prefix to match actual GCS structure
+    # The actual directories have the format: sql-exports/YYYYMMDD/csvextract/dev-service-name
+    transformed_service = f"dev-{service}"
+
     template = config.get(
         "gcs_base_path_template", "sql-exports/{date}/csvextract/{service}"
     )
-    return template.format(date=date, service=service)
+    return template.format(date=date, service=transformed_service)
 
 
 def process_service(
