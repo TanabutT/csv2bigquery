@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+from posix import O_RDONLY
 from typing import Any, Dict, List, Optional
 
 
@@ -210,6 +211,7 @@ def process_service(
 
     # Construct GCS path for this service using config template
     service_gcs_path = get_gcs_path(config, service, date_folder)
+    print("service_gcs_path: *********************", service_gcs_path)
 
     # List CSV files for this service
     csv_files = csv_reader.list_csv_files_in_gcs(service_gcs_path)
@@ -582,8 +584,12 @@ def main():
         logger.error("--rerun requires --service to be specified")
         return 1
 
-    # Create datasets for all services using config template
-    datasets = [get_dataset_name(config, service) for service in services]
+    # Create datasets for all services using config template, change dataset name to lowercase and replace hyphens with underscores by the rule of bigquery naming convention
+    datasets = [
+        get_dataset_name(config, service).lower().replace("-", "_")
+        for service in services
+    ]
+
     create_datasets(bq_client, datasets)
 
     # Process services in parallel for improved performance

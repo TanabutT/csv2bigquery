@@ -65,6 +65,7 @@ The configuration system uses templates for dynamic resource generation:
   "service_account_path": "./credentials/service-account.json"
 }
 ```
+    
 
 Key configuration features:
 - `dataset_name_template`: Generates dataset names dynamically (e.g., "dev_career_service")
