@@ -97,10 +97,23 @@ CSV2bigquery/
 ### Step 4: Table Creation from CSV
 - For each CSV file:
   - Extract schema from CSV file
+    - "dataset_name": "dev_career_service" in config.json file actually have 9 services :
+          -dev-auth-service
+          -dev-career-service
+          -dev-data-protection-service
+          -dev-digital-credential-service
+          -dev-document-service
+          -dev-learning-service
+          -dev-notification-service
+          -dev-portfolio-service
+          -dev-question-bank-service
+    - "gcs_base_path": "sql-exports-parquet/20251201/parquetextract/dev-career-service" this must access to the correct path as per the list of services above    
   - Determine appropriate table name (based on filename)
   - Create table in BigQuery with auto-detected schema
   - Load data from CSV file to table
-  - Handle table updates vs. new tables
+  - Handle table updates vs. new tables (upsert operation)
+    - If table exists, perform an upsert operation
+    - If table doesn't exist, create a new table and load data
 
 ### Step 5: Validation Implementation
 - **Completeness Validation**:
