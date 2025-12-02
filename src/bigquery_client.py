@@ -74,7 +74,7 @@ class BigQueryClient:
 
     def table_exists(self, dataset_name: str, table_name: str) -> bool:
         """
-        Check if a table exists in the dataset
+        Check if a table exists in BigQuery
 
         Args:
             dataset_name: Name of the dataset
@@ -84,14 +84,17 @@ class BigQueryClient:
             True if table exists, False otherwise
         """
         try:
+            from google.cloud.exceptions import NotFound
+
             dataset_ref = self.client.dataset(dataset_name)
             table_ref = dataset_ref.table(table_name)
-            self.client.get_table(table_ref)
-            return True
-        except GoogleAPIError as e:
-            if e.message == "Not found: Table":
+            try:
+                self.client.get_table(table_ref)
+                return True
+            except NotFound:
                 return False
-            logger.error(f"Error checking if table {table_name} exists: {e}")
+        except Exception as e:
+            logger.error(f"Error checking if table exists: {e}")
             return False
 
     def create_table_from_csv(
