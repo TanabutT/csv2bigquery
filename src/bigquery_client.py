@@ -26,7 +26,7 @@ class BigQueryClient:
             service_account_path: Path to service account key file (optional)
         """
         self.project_id = project_id
-        self.location = "asia-southeast1"
+        self.location = location
 
         # Initialize client with authentication
         if service_account_path:
@@ -63,7 +63,8 @@ class BigQueryClient:
         try:
             dataset_ref = self.client.dataset(dataset_name)
             dataset = bigquery.Dataset(dataset_ref)
-            dataset.location = self.location
+            # dataset.location = self.location
+            dataset.location = "asia-southeast1"
 
             dataset = self.client.create_dataset(dataset, exists_ok=exists_ok)
             logger.info(f"Dataset {dataset_name} created or already exists")
