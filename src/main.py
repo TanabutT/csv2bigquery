@@ -179,7 +179,7 @@ def get_gcs_path(config: Dict[str, Any], service: str, date: str) -> str:
         GCS path string
     """
     template = config.get(
-        "gcs_base_path_template", "sql-exports/{date}/parquetextract/{service}"
+        "gcs_base_path_template", "sql-exports/{date}/csvextract/{service}"
     )
     return template.format(date=date, service=service)
 
@@ -384,7 +384,6 @@ def validate_single_service_table(
         config: Configuration dictionary
         service: Service name
         table_name: Table name to validate
-
         date_folder: Date folder for the export
 
     Returns:
@@ -392,8 +391,8 @@ def validate_single_service_table(
     """
     logger.info(f"Starting validation for service: {service}, table: {table_name}")
 
-    dataset_name = f"dev_{service}"
-    service_gcs_path = f"{gcs_base_path}/{service}"
+    dataset_name = get_dataset_name(config, service)
+    service_gcs_path = get_gcs_path(config, service, date_folder)
 
     # Find the CSV file for this specific table
     csv_files = validator.csv_reader.list_csv_files_in_gcs(service_gcs_path)
@@ -472,8 +471,8 @@ def validate_results(
     all_services_valid = True
 
     for service in services:
-        dataset_name = f"dev_{service}"
-        service_gcs_path = f"{gcs_base_path}/{service}"
+        dataset_name = get_dataset_name(config, service)
+        service_gcs_path = get_gcs_path(config, service, date_folder)
 
         # Run completeness validation
         completeness = validator.validate_completeness_gcs(
@@ -620,11 +619,13 @@ def main():
     if args.rerun and args.table:
         # Validate only the specific table
         validation_results = validate_single_service_table(
-            validator, config, args.service, args.table, "", args.date
+            validator, config, args.service, args.table, args.date
         )
     else:
         # Validate all services
-        validation_results = validate_results(validator, config, services, args.date)
+        validation_results = validate_results(
+            validator, config, services, args.date, ""
+        )
 
     # Generate report
     report = {
