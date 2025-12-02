@@ -107,7 +107,7 @@ CSV2bigquery/
           -dev-notification-service
           -dev-portfolio-service
           -dev-question-bank-service
-    - "gcs_base_path": "sql-exports-parquet/20251201/parquetextract/dev-career-service" this must access to the correct path as per the list of services above    
+    - "gcs_base_path": "sql-exports/20251201/csvextract/dev-career-service" this must access to the correct path as per the list of services above    
   - Determine appropriate table name (based on filename)
   - Create table in BigQuery with auto-detected schema
   - Load data from CSV file to table
@@ -143,10 +143,10 @@ CSV2bigquery/
   "project_id": "poc-piloturl-nonprod",
   "dataset_name": "dev_career_service",
   "region": "asia-southeast1",
-  "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data",
-  "csv": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data/*.csv",
+  "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data",
+  "csv": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data/*.csv",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
-  "gcs_base_path": "sql-exports/20251201/parquetextract/dev-career-service",
+  "gcs_base_path": "sql-exports/20251201/csvextract/dev-career-service",
   "service_account_path": "./credentials/service-account.json"
 }
 in the future the CSV_source_path will move to google cloud storage gs://terra-mhesi-dp-poc-gcs-bronze-01/
