@@ -3,11 +3,74 @@ Main execution module for CSV to BigQuery ETL process
 """
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+def process_single_file(
+    bq_client: BigQueryClient,
+    config: Dict[str, Any],
+    csv_file: str,
+    service: str
+) -> Dict[str, Any]:
+    """
+    Process a single CSV file
+
+    Args:
+        bq_client: BigQuery client instance
+        config: Configuration dictionary
+        csv_file: CSV file path
+        service: Service name
+
+    Returns:
+        Dictionary with processing result
+    """
+    try:
+        # Extract table name from file path
+        table_name = os.path.splitext(os.path.basename(csv_file))[0]
+
+        # Construct GCS URI for this file
+        gcs_uri = f"gs://{config.get('gcs_bucket')}/{csv_file}"
+
+        # Get dataset name for this service using config template
+        dataset_name = get_dataset_name(config, service)
+        table_exists = bq_client.table_exists(dataset_name, table_name)
+
+        # Create or update table
+        if table_exists:
+            success = bq_client.upsert_table_from_csv(
+                dataset_name=dataset_name,
+                table_name=table_name,
+                gcs_uri=gcs_uri,
+            )
+            write_operation = "upsert"
+        else:
+            success = bq_client.create_table_from_csv(
+                dataset_name=dataset_name,
+                table_name=table_name,
+                gcs_uri=gcs_uri,
+                write_disposition="WRITE_TRUNCATE",
+            )
+            write_operation = "create"
+
+        return {
+            "file_path": csv_file,
+            "table_name": table_name,
+            "operation": write_operation,
+            "success": success,
+        }
+    except Exception as e:
+        logger.error(f"Error processing file {csv_file}: {e}")
+        return {
+            "file_path": csv_file,
+            "table_name": os.path.splitext(os.path.basename(csv_file))[0],
+            "operation": "unknown",
+            "success": False,
+            "error": str(e),
+        }
 
 try:
     from bigquery_client import BigQueryClient
@@ -186,66 +249,107 @@ def process_service(
                 "files_processed": 0,
             }
 
-    # Process each CSV file
-    for csv_file in csv_files:
-        try:
-            # Extract table name from file path
-            table_name = os.path.splitext(os.path.basename(csv_file))[0]
+    # Process each CSV file in parallel for improved performance
+    # Determine number of workers based on file count (limit to 10 to avoid API rate limits)
+    max_file_workers = min(len(csv_files), 10)
 
-            # Construct GCS URI for this file
-            gcs_uri = f"gs://{config.get('gcs_bucket')}/{csv_file}"
+    if max_file_workers > 1:
+        logger.info(f"Processing {len(csv_files)} files in parallel with {max_file_workers} workers")
 
-            logger.info(f"Processing file: {csv_file} -> table: {table_name}")
-
-            # Get dataset name for this service using config template
-            dataset_name = get_dataset_name(config, service)
-            table_exists = bq_client.table_exists(dataset_name, table_name)
-
-            # Create or update table
-            if table_exists:
-                success = bq_client.upsert_table_from_csv(
-                    dataset_name=dataset_name,
-                    table_name=table_name,
-                    gcs_uri=gcs_uri,
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_file_workers) as executor:
+            futures = []
+            for csv_file in csv_files:
+                future = executor.submit(
+                    process_single_file, bq_client, config, csv_file, service
                 )
-                write_operation = "upsert"
-            else:
-                success = bq_client.create_table_from_csv(
-                    dataset_name=dataset_name,
-                    table_name=table_name,
-                    gcs_uri=gcs_uri,
-                    write_disposition="WRITE_TRUNCATE",
-                )
-                write_operation = "create"
+                futures.append(future)
 
-            file_result = {
-                "file_path": csv_file,
-                "table_name": table_name,
-                "operation": write_operation,
-                "success": success,
-            }
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    file_result = future.result()
+                    results["files_results"].append(file_result)
 
-            results["files_results"].append(file_result)
+                    if file_result["success"]:
+                        results["files_processed"] += 1
+                    else:
+                        results["status"] = "warning"
+                        results["message"] = "Some files failed to process"
+                except Exception as e:
+                    logger.error(f"Error in parallel file processing: {e}")
+                    results["files_results"].append({
+                        "file_path": csv_file,
+                        "table_name": os.path.splitext(os.path.basename(csv_file))[0],
+                        "operation": "unknown",
+                        "success": False,
+                        "error": str(e),
+                    })
+                    results["status"] = "warning"
+                    results["message"] = "Some files failed to process"
+    else:
+        # Fall back to sequential processing for single file
+        for csv_file in csv_files:
+            try:
+                # Fall back to sequential processing for single file
+                for csv_file in csv_files:
+                    try:
+                        # Extract table name from file path
+                        table_name = os.path.splitext(os.path.basename(csv_file))[0]
 
-            if success:
-                results["files_processed"] += 1
-            else:
-                results["status"] = "warning"
-                results["message"] = "Some files failed to process"
+                        # Construct GCS URI for this file
+                        gcs_uri = f"gs://{config.get('gcs_bucket')}/{csv_file}"
 
-        except Exception as e:
-            logger.error(f"Error processing file {csv_file}: {e}")
-            results["files_results"].append(
-                {
-                    "file_path": csv_file,
-                    "table_name": table_name,
-                    "operation": "unknown",
-                    "success": False,
-                    "error": str(e),
-                }
-            )
-            results["status"] = "warning"
-            results["message"] = "Some files failed to process"
+                        logger.info(f"Processing file: {csv_file} -> table: {table_name}")
+
+                        # Get dataset name for this service using config template
+                        dataset_name = get_dataset_name(config, service)
+                        table_exists = bq_client.table_exists(dataset_name, table_name)
+
+                        # Create or update table
+                        if table_exists:
+                            success = bq_client.upsert_table_from_csv(
+                                dataset_name=dataset_name,
+                                table_name=table_name,
+                                gcs_uri=gcs_uri,
+                            )
+                            write_operation = "upsert"
+                        else:
+                            success = bq_client.create_table_from_csv(
+                                dataset_name=dataset_name,
+                                table_name=table_name,
+                                gcs_uri=gcs_uri,
+                                write_disposition="WRITE_TRUNCATE",
+                            )
+                            write_operation = "create"
+
+                        file_result = {
+                            "file_path": csv_file,
+                            "table_name": table_name,
+                            "operation": write_operation,
+                            "success": success,
+                        }
+
+                        results["files_results"].append(file_result)
+
+                        if success:
+                            results["files_processed"] += 1
+                        else:
+                            results["status"] = "warning"
+                            results["message"] = "Some files failed to process"
+
+                    except Exception as e:
+                        logger.error(f"Error processing file {csv_file}: {e}")
+                        results["files_results"].append(
+                            {
+                                "file_path": csv_file,
+                                "table_name": os.path.splitext(os.path.basename(csv_file))[0],
+                                "operation": "unknown",
+                                "success": False,
+                                "error": str(e),
+                            }
+                        )
+                        results["status"] = "warning"
+                        results["message"] = "Some files failed to process"
 
     return results
 
@@ -468,23 +572,34 @@ def main():
     datasets = [get_dataset_name(config, service) for service in services]
     create_datasets(bq_client, datasets)
 
-    # Process services
+    # Process services in parallel for improved performance
     processing_results = {}
 
     if not args.validate_only:
         logger.info("Starting data processing")
 
-        for service in services:
-            specific_table = args.table if args.rerun else None
-            result = process_service(
-                bq_client,
-                csv_reader,
-                config,
-                service,
-                args.date,
-                specific_table,
-            )
-            processing_results[service] = result
+        # Determine number of workers based on services count (limit to 5 to avoid API rate limits)
+        max_workers = min(len(services), 5)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for service in services:
+                specific_table = args.table if args.rerun else None
+                future = executor.submit(
+                    process_service,
+                    bq_client,
+                    csv_reader,
+                    config,
+                    service,
+                    args.date,
+                    specific_table,
+                )
+                futures.append(future)
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                processing_results[result["service"]] = result
 
     # Validate results
     if args.rerun and args.table:
