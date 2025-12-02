@@ -104,6 +104,7 @@ class BigQueryClient:
         gcs_uri: str,
         schema: Optional[List[bigquery.SchemaField]] = None,
         write_disposition: str = "WRITE_TRUNCATE",
+        location: Optional[str] = None,
     ) -> bool:
         """
         Create a table in BigQuery from a CSV file in GCS
@@ -135,8 +136,11 @@ class BigQueryClient:
 
             # Use the client's configured location for load jobs so temp tables
             # and target datasets are created in the same region.
+            # load jobs must run in the correct location/region. Use the
+            # provided location or fall back to the client's configured one.
+            resolved_location = location or self.location
             load_job = self.client.load_table_from_uri(
-                gcs_uri, table_ref, job_config=job_config, location=self.location
+                gcs_uri, table_ref, job_config=job_config, location=resolved_location
             )
 
             load_job.result()  # Wait for job to complete
@@ -169,8 +173,16 @@ class BigQueryClient:
                 "project": table.project,
                 "num_rows": table.num_rows,
                 "num_bytes": table.num_bytes,
-                "created": table.created.isoformat() if table.created else None,
-                "modified": table.modified.isoformat() if table.modified else None,
+                "created": (
+                    table.created.isoformat()
+                    if table.created and hasattr(table.created, "isoformat")
+                    else (table.created if table.created else None)
+                ),
+                "modified": (
+                    table.modified.isoformat()
+                    if table.modified and hasattr(table.modified, "isoformat")
+                    else (table.modified if table.modified else None)
+                ),
                 "schema": [
                     {"name": field.name, "type": field.field_type, "mode": field.mode}
                     for field in table.schema
@@ -216,9 +228,27 @@ class BigQueryClient:
             # If table exists, create a temporary table with new data
             temp_table_name = f"{table_name}{temp_table_suffix}"
 
-            # Load new data into temp table
+            # Ensure we operate in the dataset's location when creating temp tables
+            dataset_ref = self.client.dataset(dataset_name)
+            try:
+                dataset_obj = self.client.get_dataset(dataset_ref)
+                dataset_location = dataset_obj.location or self.location
+            except Exception:
+                # If we can't fetch the dataset, fall back to client-configured location
+                dataset_location = self.location
+
+            # If a previous temp table exists, delete it before loading new data.
+            try:
+                existing_temp = self.client.get_table(dataset_ref.table(temp_table_name))
+                if existing_temp:
+                    self.client.delete_table(dataset_ref.table(temp_table_name))
+            except Exception:
+                # not existing is fine
+                pass
+
+            # Load new data into temp table (in dataset's location)
             if not self.create_table_from_csv(
-                dataset_name, temp_table_name, gcs_uri, schema, "WRITE_TRUNCATE"
+                dataset_name, temp_table_name, gcs_uri, schema, "WRITE_TRUNCATE", location=dataset_location
             ):
                 return False
 
@@ -278,7 +308,8 @@ class BigQueryClient:
             })
             """
 
-            query_job = self.client.query(sql)
+            # Ensure the MERGE query runs in the dataset's location
+            query_job = self.client.query(sql, location=dataset_location)
             query_job.result()
 
             # Delete temporary table

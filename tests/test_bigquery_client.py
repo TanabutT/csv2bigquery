@@ -122,27 +122,84 @@ class TestBigQueryClient(unittest.TestCase):
     @patch("src.bigquery_client.bigquery.Client")
     def test_upsert_table_from_csv_new_table(self, mock_client):
         """Test upsert table from CSV when table doesn't exist"""
-        # Setup mock
+        # Setup mock client instance and BigQueryClient method patches
         mock_instance = MagicMock()
-        mock_instance.table_exists.return_value = False
-        mock_instance.create_table_from_csv.return_value = True
         mock_client.return_value = mock_instance
 
-        # Create client
-        bq_client = BigQueryClient(self.project_id, self.location)
+        # Patch BigQueryClient.table_exists to return False and create_table_from_csv to return True
+        with patch("src.bigquery_client.BigQueryClient.table_exists", return_value=False), patch(
+            "src.bigquery_client.BigQueryClient.create_table_from_csv", return_value=True
+        ) as create_mock:
+            # Create client
+            bq_client = BigQueryClient(self.project_id, self.location)
 
-        # Test upsert
-        dataset_name = "test_dataset"
-        table_name = "test_table"
-        gcs_uri = "gs://test-bucket/test-file.csv"
-        result = bq_client.upsert_table_from_csv(dataset_name, table_name, gcs_uri)
+            # Test upsert
+            dataset_name = "test_dataset"
+            table_name = "test_table"
+            gcs_uri = "gs://test-bucket/test-file.csv"
+            result = bq_client.upsert_table_from_csv(dataset_name, table_name, gcs_uri)
 
-        # Verify
-        self.assertTrue(result)
-        mock_instance.table_exists.assert_called_once_with(dataset_name, table_name)
-        mock_instance.create_table_from_csv.assert_called_once_with(
-            dataset_name, table_name, gcs_uri, None, "WRITE_TRUNCATE"
-        )
+            # Verify
+            self.assertTrue(result)
+            create_mock.assert_called_once_with(dataset_name, table_name, gcs_uri, None, "WRITE_TRUNCATE")
+
+    @patch("src.bigquery_client.bigquery.Client")
+    def test_upsert_table_from_csv_existing_table_uses_dataset_location(
+        self, mock_client
+    ):
+        """When target table exists, the temp table load and merge query should use dataset location"""
+        mock_instance = MagicMock()
+        mock_client.return_value = mock_instance
+
+        # Simulate BigQueryClient.table_exists returning True
+        with patch("src.bigquery_client.BigQueryClient.table_exists", return_value=True):
+            # Simulate dataset location
+            dataset_location = "europe-west1"
+            dataset_obj = MagicMock()
+            dataset_obj.location = dataset_location
+            mock_instance.get_dataset.return_value = dataset_obj
+
+            # target table schema (simple id + other col)
+            schema_field_id = MagicMock()
+            schema_field_id.name = "id"
+            schema_field_other = MagicMock()
+            schema_field_other.name = "name"
+
+            mock_target_table = MagicMock()
+            mock_target_table.schema = [schema_field_id, schema_field_other]
+            mock_instance.get_table.return_value = mock_target_table
+
+            # Ensure create_table_from_csv (on BigQueryClient) returns True
+            with patch("src.bigquery_client.BigQueryClient.create_table_from_csv", return_value=True) as create_mock:
+
+                # provide a query job mock
+                mock_query_job = MagicMock()
+                mock_query_job.result.return_value = None
+                mock_instance.query.return_value = mock_query_job
+
+                bq_client = BigQueryClient(self.project_id, self.location)
+
+                dataset_name = "test_dataset"
+                table_name = "test_table"
+                gcs_uri = "gs://test-bucket/test-file.csv"
+
+                result = bq_client.upsert_table_from_csv(dataset_name, table_name, gcs_uri)
+
+                self.assertTrue(result)
+
+                temp_table_name = f"{table_name}_temp"
+
+                # create_table_from_csv should have been called for the temp table and passed dataset_location
+                create_mock.assert_any_call(
+                    dataset_name, temp_table_name, gcs_uri, None, "WRITE_TRUNCATE", location=dataset_location
+                )
+
+                # The merge query should be executed with the dataset location
+                mock_instance.query.assert_called_once()
+                # ensure it was called with location
+                called_args, called_kwargs = mock_instance.query.call_args
+                self.assertIn("location", called_kwargs)
+                self.assertEqual(called_kwargs.get("location"), dataset_location)
 
     @patch("src.bigquery_client.bigquery.Client")
     def test_get_table_info(self, mock_client):
