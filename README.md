@@ -17,6 +17,8 @@ The application automates the process of extracting data from CSV files stored i
 - Supports multiple services/datasets in a single run
 - **NEW:** Rerun specific services or tables with the --rerun flag
 - **NEW:** Target specific tables within a service for focused processing or validation
+- **NEW:** Automatic filtering of prisma migration files
+- **NEW:** Fixed CSV file discovery in GCS paths with dev- prefix
 
 ## Project Structure
 
@@ -74,26 +76,29 @@ csv2bigquery/
 The application uses the following configuration parameters:
 
 - `project_id`: Your Google Cloud project ID
-- `dataset_name`: Name of the BigQuery dataset (note: this is used as a base name, and multiple datasets will be created for each service)
+- `dataset_name_template`: Template for generating dataset names (e.g., "dev_{service}")
 - `region`: Location/region for the BigQuery datasets
 - `gcs_bucket`: Name of the GCS bucket containing CSV files
-- `gcs_base_path`: Base path in GCS where CSV files are stored
-- `service_account_path`: Path to service account key file (optional)
+- `gcs_base_path_template`: Template for generating GCS paths dynamically (e.g., "sql-exports/{date}/csvextract/{service}")
+- `services`: List of services to process
+- `service_account_path`: Path to the service account key file (optional)
 
 ## Supported Services
 
-The application supports the following services:
-- dev-auth-service
-- dev-career-service
-- dev-data-protection-service
-- dev-digital-credential-service
-- dev-document-service
-- dev-learning-service
-- dev-notification-service
-- dev-portfolio-service
-- dev-question-bank-service
+The application supports the following services (configured in config.json):
+- auth-service
+- career-service
+- data-protection-service
+- digital-credential-service
+- document-service
+- learning-service
+- notification-service
+- portfolio-service
+- question-bank-service
 
-For each service, a corresponding dataset will be created in BigQuery (e.g., "dev_auth_service" for "auth-service").
+For each service, a corresponding dataset will be created in BigQuery (e.g., "dev_auth" for "auth-service").
+
+Note: The actual GCS directories include a "dev-" prefix (e.g., dev-auth-service), which the application handles automatically.
 
 ## Usage
 
@@ -167,10 +172,12 @@ The application performs two types of validation:
 1. **Completeness Validation**
    - Verifies all CSV files in the source have been processed
    - Compares row counts between source CSV files and destination tables
+   - Automatically excludes prisma migration files from validation
 
 2. **Correctness Validation**
    - Validates schema consistency between CSV files and BigQuery tables
    - Samples and compares data values between source and destination
+   - Reports data type mismatches and inconsistencies
 
 ## Error Handling
 
@@ -179,8 +186,16 @@ The application includes comprehensive error handling:
 - BigQuery operation failures
 - CSV parsing errors
 - Validation failures
+- Dataset naming issues (automatically handles hyphen to underscore conversion)
 
 Errors are logged with appropriate detail levels, and the application continues processing other files when possible.
+
+## Recent Fixes and Improvements
+
+1. **CSV Discovery Fix**: Fixed GCS path resolution to correctly find CSV files in directories with "dev-" prefix
+2. **Dataset Naming**: Corrected dataset name generation to handle hyphens in service names properly
+3. **Prisma File Filtering**: Added automatic filtering to skip prisma migration files during processing
+4. **CSV Reader Enhancement**: Improved CSV reading to use GCS client directly instead of public URLs
 
 ## Testing
 
@@ -193,10 +208,32 @@ python -m unittest discover tests
 
 To extend the application:
 
-1. Add new services to the services list in `main.py`
+1. Add new services to the services list in `config.json`
 2. Modify the configuration schema in `config.json` as needed
 3. Add new validation rules in `validator.py`
 4. Extend the BigQuery operations in `bigquery_client.py`
+
+## Troubleshooting
+
+### CSV Files Not Found
+
+If you encounter errors like "Found 0 CSV files in GCS path: sql-exports/20251201/csvextract/question-bank-service":
+
+1. **Check GCS Directory Structure**: 
+   - CSV files are stored in directories with `dev-` prefix (e.g., `dev-question-bank-service`)
+   - The application automatically adds this prefix when searching for files
+
+2. **Verify Configuration**:
+   - Ensure `gcs_base_path_template` in config.json is correct
+   - The template should be: `sql-exports/{date}/csvextract/{service}`
+
+3. **Check Service Names**:
+   - Service names in config.json should use kebab-case (e.g., `question-bank-service`)
+   - Dataset names will automatically have hyphens converted to underscores for BigQuery compatibility
+
+4. **Prisma Files**:
+   - Prisma migration files are automatically filtered out
+   - They contain database schema changes, not actual data
 
 ## License
 

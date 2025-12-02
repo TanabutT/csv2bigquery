@@ -17,6 +17,10 @@ All major components have been implemented and are functional:
   - Parallel service processing (up to 5 services concurrently)
   - Parallel file processing within each service (up to 10 files concurrently)
   - Optimized code structure for faster execution
+- ✅ CSV file discovery fixes:
+  - Fixed GCS path template to include dev- prefix
+  - Fixed dataset naming to handle hyphens correctly
+  - Added filtering to skip prisma migration files
 
 ## Current Project Structure
 ```
@@ -47,7 +51,7 @@ The configuration system uses templates for dynamic resource generation:
 ```json
 {
   "project_id": "poc-piloturl-nonprod",
-  "dataset_name_template": "dev_{service}_service",
+  "dataset_name_template": "dev_{service}",
   "region": "asia-southeast1",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
   "gcs_base_path_template": "sql-exports/{date}/csvextract/{service}",
@@ -69,7 +73,7 @@ The configuration system uses templates for dynamic resource generation:
 
 Key configuration features:
 - `dataset_name_template`: Generates dataset names dynamically (e.g., "dev_career_service")
-- `gcs_base_path_template`: Generates GCS paths dynamically (e.g., "sql-exports/20251201/csvextract/career-service")
+- `gcs_base_path_template`: Generates GCS paths dynamically (e.g., "sql-exports/20251201/csvextract/dev-career-service")
 - `services`: List of services to process
 
 ## Implemented Features
@@ -87,6 +91,8 @@ Key configuration features:
 - ✅ CSV file discovery and metadata extraction
 - ✅ Schema extraction from CSV files
 - ✅ Data loading into pandas DataFrames
+- ✅ Automatic filtering of prisma migration files
+- ✅ Correct GCS path resolution with dev- prefix handling
 
 ### 3. Data Validation
 - ✅ Completeness validation:
@@ -249,6 +255,32 @@ Expected performance improvements:
 - **3-5x speed improvement** for processing multiple services
 - **2-10x speed improvement** for services with multiple files
 - **Overall 10-15x improvement** for complete ETL process
+
+## Recent Issues and Fixes
+
+### CSV Files Not Found Issue
+
+**Problem**: Error "Found 0 CSV files in GCS path: sql-exports/20251201/csvextract/question-bank-service"
+
+**Root Cause**: Mismatch between expected and actual GCS directory structure
+- Code was looking for: `sql-exports/20251201/csvextract/question-bank-service`
+- Actual directory: `sql-exports/20251201/csvextract/dev-question-bank-service`
+
+**Solution Implemented**:
+1. Updated `get_gcs_path()` function to add `dev-` prefix to service names
+2. Fixed dataset naming to handle hyphens in service names correctly
+3. Added automatic filtering to skip prisma migration files
+
+### Prisma Migration File Errors
+
+**Problem**: CSV processing failed for files with "prisma" in the name
+- Files had formatting issues
+- They contain database schema changes, not actual data
+
+**Solution Implemented**:
+1. Modified `CSV_reader.list_csv_files_in_gcs()` to filter out prisma files
+2. Modified `CSV_reader.list_csv_files_local()` for consistency
+3. Added additional safety check in `process_service()` function
 
 ## Future Enhancements
 
