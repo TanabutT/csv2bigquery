@@ -10,11 +10,9 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
+
 def process_single_file(
-    bq_client: BigQueryClient,
-    config: Dict[str, Any],
-    csv_file: str,
-    service: str
+    bq_client: BigQueryClient, config: Dict[str, Any], csv_file: str, service: str
 ) -> Dict[str, Any]:
     """
     Process a single CSV file
@@ -71,6 +69,7 @@ def process_single_file(
             "success": False,
             "error": str(e),
         }
+
 
 try:
     from bigquery_client import BigQueryClient
@@ -254,9 +253,13 @@ def process_service(
     max_file_workers = min(len(csv_files), 10)
 
     if max_file_workers > 1:
-        logger.info(f"Processing {len(csv_files)} files in parallel with {max_file_workers} workers")
+        logger.info(
+            f"Processing {len(csv_files)} files in parallel with {max_file_workers} workers"
+        )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_file_workers) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_file_workers
+        ) as executor:
             futures = []
             for csv_file in csv_files:
                 future = executor.submit(
@@ -277,13 +280,17 @@ def process_service(
                         results["message"] = "Some files failed to process"
                 except Exception as e:
                     logger.error(f"Error in parallel file processing: {e}")
-                    results["files_results"].append({
-                        "file_path": csv_file,
-                        "table_name": os.path.splitext(os.path.basename(csv_file))[0],
-                        "operation": "unknown",
-                        "success": False,
-                        "error": str(e),
-                    })
+                    results["files_results"].append(
+                        {
+                            "file_path": csv_file,
+                            "table_name": os.path.splitext(os.path.basename(csv_file))[
+                                0
+                            ],
+                            "operation": "unknown",
+                            "success": False,
+                            "error": str(e),
+                        }
+                    )
                     results["status"] = "warning"
                     results["message"] = "Some files failed to process"
     else:
@@ -299,7 +306,9 @@ def process_service(
                         # Construct GCS URI for this file
                         gcs_uri = f"gs://{config.get('gcs_bucket')}/{csv_file}"
 
-                        logger.info(f"Processing file: {csv_file} -> table: {table_name}")
+                        logger.info(
+                            f"Processing file: {csv_file} -> table: {table_name}"
+                        )
 
                         # Get dataset name for this service using config template
                         dataset_name = get_dataset_name(config, service)
@@ -342,7 +351,9 @@ def process_service(
                         results["files_results"].append(
                             {
                                 "file_path": csv_file,
-                                "table_name": os.path.splitext(os.path.basename(csv_file))[0],
+                                "table_name": os.path.splitext(
+                                    os.path.basename(csv_file)
+                                )[0],
                                 "operation": "unknown",
                                 "success": False,
                                 "error": str(e),
@@ -350,6 +361,10 @@ def process_service(
                         )
                         results["status"] = "warning"
                         results["message"] = "Some files failed to process"
+            except Exception as ex:
+                logger.error(f"Error processing files: {ex}")
+                results["status"] = "error"
+                results["message"] = "Failed to process files"
 
     return results
 
