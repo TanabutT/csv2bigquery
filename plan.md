@@ -1,159 +1,270 @@
 # Plan for CSV to BigQuery ETL Process
 
 ## Overview
-This plan outlines the development of a Python script to process CSV files and load them into Google BigQuery as tables within a specified dataset.
+This plan outlines the development and implementation of a Python-based ETL (Extract, Transform, Load) solution for processing CSV files and loading them into Google BigQuery as tables within specified datasets. The project is currently fully implemented with all major features operational.
 
-## Project Structure
-CSV2bigquery/
+## Project Status: ✅ COMPLETE
+
+All major components have been implemented and are functional:
+- ✅ BigQuery client with connection and table management
+- ✅ CSV reader supporting both local and GCS sources
+- ✅ Data validator with completeness and correctness checks
+- ✅ Dynamic configuration system
+- ✅ Rerun functionality for specific services and tables
+- ✅ Comprehensive error handling and logging
+- ✅ Test suite implementation
+
+## Current Project Structure
+```
+csv2bigquery/
 ├── src/
-│   ├── main.py
-│   ├── bigquery_client.py
-│   ├── CSV_reader.py
-│   └── validator.py
+│   ├── __init__.py              # Package initialization
+│   ├── main.py                 # Main execution module with CLI
+│   ├── bigquery_client.py       # BigQuery operations
+│   ├── CSV_reader.py            # CSV file processing
+│   └── validator.py             # Data validation
 ├── tests/
-│   ├── test_bigquery_client.py
-│   ├── test_CSV_reader.py
-│   └── test_validator.py
-├── requirements.txt
-├── config.json
-└── README.md
+│   ├── __init__.py              # Test package initialization
+│   ├── test_bigquery_client.py   # Tests for BigQuery client
+│   ├── test_CSV_reader.py        # Tests for CSV reader
+│   └── test_validator.py         # Tests for validator
+├── credentials/                  # Directory for service account keys
+├── .gitignore                  # Git ignore file
+├── requirements.txt              # Python dependencies
+├── config.json                 # Dynamic configuration file
+├── README.md                   # Project documentation
+└── plan.md                     # This file
+```
 
+## Configuration System
 
-## Implementation Steps
-### 1. git init and git ignore
-- Initialize a new Git repository 
-- Create `.gitignore` file to exclude unnecessary files
-### 2. Setup and Dependencies
-- Create `requirements.txt` with necessary packages:
-  - `google-cloud-bigquery`
-  - `pandas`
-  - `pyarrow`
-  - `google-auth`
-- create venv and install dependencies
-  ```
-  python -m venv venv
-  source venv/bin/activate
-  pip install -r requirements.txt
-  ```
-### 3. Configuration Management
-- Create a `config.json` file for project settings:
-  - GCP project ID
-  - BigQuery dataset name (`dev-career-service`)
-  - Location/region for dataset
-  - Source CSV file path
-  - Service account key path (if needed)
+The configuration system uses templates for dynamic resource generation:
 
-### 3. BigQuery Connection Module (`bigquery_client.py`)
-- Initialize BigQuery client with proper authentication
-- Function to create dataset if it doesn't exist
-- Function to check if table exists
-- Function to create table from CSV file
-- Function to get table schema and metadata
-
-### 4. CSV Reader Module (`CSV_reader.py`)
-- Function to scan directory for CSV files in google cloud storage
-- Function to read CSV file metadata
-- Function to extract schema from CSV files
-- Function to read CSV data into pandas DataFrame for validation
-
-### 5. Validation Module (`validator.py`)
-- Function to validate completeness:
-  - Compare row counts between CSV and BigQuery table
-  - Check if all files in source folder have been processed
-- Function to validate correctness:
-  - Sample data comparison between source and destination
-  - Schema validation between CSV and BigQuery table
-  - Data type consistency check
-
-### 6. Main Execution Module (`main.py`)
-- Initialize components
-- Orchestrate the ETL process:
-  1. Connect to BigQuery
-  2. Ensure dataset exists
-  3. Scan for CSV files
-  4. Process each CSV file:
-     - Create table in BigQuery if not exists
-     - Load data from CSV to table
-  5. Run validation checks
-  6. Report results
-
-## Detailed Implementation Plan
-
-### Step 1: BigQuery Service Connection
-- Implement authentication using service account or default credentials
-- Initialize BigQuery client
-- Test connection with a simple query or operation
-
-### Step 2: CSV File Discovery
-- Implement directory scanning to find all CSV files
-- Extract file metadata (size, modified date)
-- Create a list of files to be processed
-
-### Step 3: Dataset Creation
-- Check if dataset `dev-career-service` exists
-- Create dataset if it doesn't exist with proper configuration
-- Handle errors and exceptions
-
-### Step 4: Table Creation from CSV
-- For each CSV file:
-  - Extract schema from CSV file
-    - "dataset_name": "dev_career_service" in config.json file actually have 9 services :
-          -dev-auth-service
-          -dev-career-service
-          -dev-data-protection-service
-          -dev-digital-credential-service
-          -dev-document-service
-          -dev-learning-service
-          -dev-notification-service
-          -dev-portfolio-service
-          -dev-question-bank-service
-    - "gcs_base_path": "sql-exports/20251201/csvextract/dev-career-service" this must access to the correct path as per the list of services above    
-  - Determine appropriate table name (based on filename)
-  - Create table in BigQuery with auto-detected schema
-  - Load data from CSV file to table
-  - Handle table updates vs. new tables (upsert operation)
-    - If table exists, perform an upsert operation
-    - If table doesn't exist, create a new table and load data
-
-### Step 5: Validation Implementation
-- **Completeness Validation**:
-  - Verify row count matches between source CSV and destination table
-  - Check that all CSV files in folder have been processed
-  - Log any missing files or data discrepancies
-  
-- **Correctness Validation**:
-  - Sample rows from both source and destination
-  - Compare values between CSV and BigQuery table
-  - Validate that schema types match between CSV and BigQuery
-  - Check for data truncation or precision loss
-  - Generate a validation report
-
-### Step 6: Error Handling and Logging
-- Implement comprehensive error handling
-- Create logging mechanism for process tracking
-- Handle partial failures gracefully
-
-
-
-## Example Implementation Snippets
-
-### Configuration Example
 ```json
 {
   "project_id": "poc-piloturl-nonprod",
-  "dataset_name": "dev_career_service",
+  "dataset_name_template": "dev_{service}_service",
   "region": "asia-southeast1",
-  "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data",
-  "csv": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data/*.csv",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
-  "gcs_base_path": "sql-exports/20251201/csvextract/dev-career-service",
+  "gcs_base_path_template": "sql-exports/{date}/parquetextract/{service}",
+  "services": [
+    "auth-service",
+    "career-service",
+    "data-protection-service",
+    "digital-credential-service",
+    "document-service",
+    "learning-service",
+    "notification-service",
+    "portfolio-service",
+    "question-bank-service"
+  ],
   "service_account_path": "./credentials/service-account.json"
 }
-in the future the CSV_source_path will move to google cloud storage gs://terra-mhesi-dp-poc-gcs-bronze-01/
+```
 
+Key configuration features:
+- `dataset_name_template`: Generates dataset names dynamically (e.g., "dev_career_service")
+- `gcs_base_path_template`: Generates GCS paths dynamically (e.g., "sql-exports/20251201/parquetextract/career-service")
+- `services`: List of services to process
 
+## Implemented Features
 
- Then add the function for new feature to rerun 
-     - rerun specific database service ( of that 9 services)
-     - rerun specific table in the specific database service
-        - table might have Dependencies table to run with but right now we don't have the list (just prepare arguments)
+### 1. BigQuery Operations
+- ✅ Authentication using service account or default credentials
+- ✅ Dynamic dataset creation based on service name
+- ✅ Table existence checking
+- ✅ Table creation from CSV files with auto-detected schema
+- ✅ Upsert operations (update existing or insert new records)
+- ✅ Schema and metadata retrieval
+
+### 2. CSV Processing
+- ✅ Support for both local and GCS file sources
+- ✅ CSV file discovery and metadata extraction
+- ✅ Schema extraction from CSV files
+- ✅ Data loading into pandas DataFrames
+
+### 3. Data Validation
+- ✅ Completeness validation:
+  - Row count comparison between CSV and BigQuery
+  - File processing verification
+  - Detailed reporting of any discrepancies
+- ✅ Correctness validation:
+  - Schema validation between CSV and BigQuery
+  - Sample data comparison
+  - Data type consistency checking
+
+### 4. Advanced Features
+- ✅ Rerun functionality:
+  - Rerun specific services: `--service career-service --rerun`
+  - Rerun specific tables: `--service career-service --table users --rerun`
+  - Validate only mode: `--validate-only`
+- ✅ Dynamic service support via configuration
+- ✅ Comprehensive error handling and logging
+- ✅ Detailed reporting in JSON format
+
+## Command-Line Interface
+
+### Basic Usage
+```bash
+# Process all services
+python src/main.py
+
+# Process specific service
+python src/main.py --service career-service
+
+# Process files from specific date
+python src/main.py --date 20251202
+
+# Run validation only
+python src/main.py --validate-only
+```
+
+### Advanced Usage
+```bash
+# Rerun a specific service
+python src/main.py --service career-service --rerun
+
+# Rerun a specific table within a service
+python src/main.py --service career-service --table users --rerun
+
+# Validate only a specific table
+python src/main.py --service career-service --table users --validate-only --rerun
+```
+
+## Test Suite
+
+The project includes a comprehensive test suite:
+- `test_bigquery_client.py`: Tests for BigQuery operations
+- `test_CSV_reader.py`: Tests for CSV processing
+- `test_validator.py`: Tests for validation logic
+
+Run tests with:
+```bash
+python -m unittest discover tests
+```
+
+## Deployment and Replication
+
+To replicate this project in a new environment:
+
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/TanabutT/csv2bigquery.git
+   cd csv2bigquery
+   ```
+
+2. **Set Up Python Environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+3. **Configure the Application**:
+   - Copy `config.json.example` to `config.json` (if available)
+   - Update configuration parameters as needed:
+     - `project_id`: Your GCP project ID
+     - `gcs_bucket`: Your GCS bucket name
+     - `service_account_path`: Path to service account key
+
+4. **Place Service Account Key**:
+   - Put your service account JSON key in `credentials/` directory
+
+5. **Run the Application**:
+   ```bash
+   # Process all services
+   python src/main.py
+   
+   # Or process specific service
+   python src/main.py --service career-service
+   ```
+
+## Architecture Flow
+
+1. **Initialization**:
+   - Load configuration from `config.json`
+   - Initialize BigQuery client and CSV reader
+   - Initialize validator
+
+2. **Processing**:
+   - For each service (or specific service):
+     - Generate dataset name using template
+     - Generate GCS path using template
+     - Create dataset if not exists
+     - List CSV files in GCS location
+     - For each CSV file:
+       - Extract table name from filename
+       - Check if table exists in BigQuery
+       - Create new table or upsert data
+       - Track processing results
+
+3. **Validation**:
+   - For each processed service:
+     - Run completeness validation
+     - Run correctness validation
+     - Generate validation report
+
+4. **Reporting**:
+   - Generate comprehensive JSON report
+   - Log summary to console and file
+
+## Error Handling
+
+The application implements comprehensive error handling:
+- Connection errors (GCS, BigQuery)
+- File access errors
+- Data processing errors
+- Validation failures
+- Partial failures with continued processing
+
+All errors are logged with appropriate detail levels, and processing continues where possible.
+
+## Future Enhancements
+
+Potential areas for future improvement:
+1. **Dependency Management**:
+   - Track table dependencies
+   - Implement proper execution order
+   - Add dependency visualization
+
+2. **Performance Optimization**:
+   - Parallel processing of services
+   - Batch operations for large datasets
+   - Incremental loading for large files
+
+3. **Advanced Validation**:
+   - Data quality checks
+   - Anomaly detection
+   - Custom validation rules
+
+4. **Monitoring**:
+   - Progress tracking
+   - Performance metrics
+   - Alerting for failures
+
+## Examples
+
+### Processing a Single Service
+```bash
+python src/main.py --service career-service --date 20251201
+```
+
+Result:
+- Creates dataset: `dev_career_service`
+- Processes CSV files from: `sql-exports/20251201/parquetextract/career-service`
+- Generates table for each CSV file
+- Validates all processed data
+- Creates report: `csv2bq_report_20251201.json`
+
+### Rerunning a Specific Table
+```bash
+python src/main.py --service career-service --table users --rerun
+```
+
+Result:
+- Processes only `users.csv` from career-service
+- Upserts data into existing `dev_career_service.users` table
+- Validates only this table
+- Creates report with details for this specific operation
+
+This plan serves as both historical documentation and a practical guide for replicating the project in new environments.
