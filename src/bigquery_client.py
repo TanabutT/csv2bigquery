@@ -134,7 +134,7 @@ class BigQueryClient:
             )
 
             load_job = self.client.load_table_from_uri(
-                gcs_uri, table_ref, job_config=job_config, location="asia-southeast1",
+                gcs_uri, table_ref, job_config=job_config, location="asia-southeast1"
             )
 
             load_job.result()  # Wait for job to complete
