@@ -153,8 +153,8 @@ class TestBigQueryClient(unittest.TestCase):
 
         # Simulate BigQueryClient.table_exists returning True
         with patch("src.bigquery_client.BigQueryClient.table_exists", return_value=True):
-            # Simulate dataset location
-            dataset_location = "europe-west1"
+            # Simulate dataset location (same as client configuration to avoid enforcement abort)
+            dataset_location = self.location
             dataset_obj = MagicMock()
             dataset_obj.location = dataset_location
             mock_instance.get_dataset.return_value = dataset_obj
@@ -200,6 +200,72 @@ class TestBigQueryClient(unittest.TestCase):
                 called_args, called_kwargs = mock_instance.query.call_args
                 self.assertIn("location", called_kwargs)
                 self.assertEqual(called_kwargs.get("location"), dataset_location)
+
+    @patch("src.bigquery_client.bigquery.Client")
+    def test_upsert_fails_on_dataset_location_mismatch_when_enforced(self, mock_client):
+        """If dataset location mismatches and enforcement is enabled, upsert should abort"""
+        mock_instance = MagicMock()
+        mock_client.return_value = mock_instance
+
+        with patch("src.bigquery_client.BigQueryClient.table_exists", return_value=True):
+            # dataset reported location different than client
+            dataset_obj = MagicMock()
+            dataset_obj.location = "asia-northeast1"
+            mock_instance.get_dataset.return_value = dataset_obj
+
+            # patch create_table_from_csv so we can assert it is NOT called
+            with patch("src.bigquery_client.BigQueryClient.create_table_from_csv", return_value=True) as create_mock:
+                bq_client = BigQueryClient(self.project_id, self.location)
+
+                dataset_name = "test_dataset"
+                table_name = "test_table"
+                gcs_uri = "gs://test-bucket/test-file.csv"
+
+                # enforce_dataset_location True (default) -> should abort and return False
+                result = bq_client.upsert_table_from_csv(dataset_name, table_name, gcs_uri, enforce_dataset_location=True)
+                self.assertFalse(result)
+                create_mock.assert_not_called()
+
+    @patch("src.bigquery_client.bigquery.Client")
+    def test_upsert_proceeds_when_enforcement_disabled(self, mock_client):
+        """If dataset location mismatches but enforcement is disabled, upsert proceeds"""
+        mock_instance = MagicMock()
+        mock_client.return_value = mock_instance
+
+        with patch("src.bigquery_client.BigQueryClient.table_exists", return_value=True):
+            # dataset reported location different than client
+            dataset_obj = MagicMock()
+            dataset_obj.location = "asia-northeast1"
+            mock_instance.get_dataset.return_value = dataset_obj
+
+            # target table schema (simple id + other col)
+            schema_field_id = MagicMock()
+            schema_field_id.name = "id"
+            schema_field_other = MagicMock()
+            schema_field_other.name = "name"
+
+            mock_target_table = MagicMock()
+            mock_target_table.schema = [schema_field_id, schema_field_other]
+            mock_instance.get_table.return_value = mock_target_table
+
+            # patch create_table_from_csv to succeed
+            with patch("src.bigquery_client.BigQueryClient.create_table_from_csv", return_value=True) as create_mock:
+                mock_query_job = MagicMock()
+                mock_query_job.result.return_value = None
+                mock_instance.query.return_value = mock_query_job
+
+                bq_client = BigQueryClient(self.project_id, self.location)
+
+                dataset_name = "test_dataset"
+                table_name = "test_table"
+                gcs_uri = "gs://test-bucket/test-file.csv"
+
+                result = bq_client.upsert_table_from_csv(dataset_name, table_name, gcs_uri, enforce_dataset_location=False)
+                self.assertTrue(result)
+
+                temp_table_name = f"{table_name}_temp"
+                # create should have been called for temp with dataset's location
+                create_mock.assert_any_call(dataset_name, temp_table_name, gcs_uri, None, "WRITE_TRUNCATE", location=dataset_obj.location)
 
     @patch("src.bigquery_client.bigquery.Client")
     def test_get_table_info(self, mock_client):

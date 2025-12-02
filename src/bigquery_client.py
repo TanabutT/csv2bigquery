@@ -103,6 +103,7 @@ class BigQueryClient:
         table_name: str,
         gcs_uri: str,
         schema: Optional[List[bigquery.SchemaField]] = None,
+        enforce_dataset_location: bool = True,
         write_disposition: str = "WRITE_TRUNCATE",
         location: Optional[str] = None,
     ) -> bool:
@@ -201,6 +202,7 @@ class BigQueryClient:
         gcs_uri: str,
         temp_table_suffix: str = "_temp",
         schema: Optional[List[bigquery.SchemaField]] = None,
+        enforce_dataset_location: bool = True,
     ) -> bool:
         """
         Upsert (update or insert) data from CSV into existing table
@@ -237,6 +239,24 @@ class BigQueryClient:
                 # If we can't fetch the dataset, fall back to client-configured location
                 dataset_location = self.location
 
+            # If the dataset exists in a different region than the client-configured
+            # region, optionally enforce that they match. If enforcement is enabled
+            # we'll fail-fast with a helpful log so callers can fix their config.
+            if dataset_location != self.location:
+                msg = (
+                    f"Dataset {dataset_name} is in location {dataset_location} "
+                    f"but client is configured for {self.location}."
+                )
+                if enforce_dataset_location:
+                    logger.error(
+                        f"Dataset location mismatch: {msg} Upsert aborted."
+                    )
+                    return False
+                else:
+                    logger.warning(
+                        f"Dataset location mismatch: {msg} Proceeding because enforce_dataset_location is False."
+                    )
+
             # If a previous temp table exists, delete it before loading new data.
             try:
                 existing_temp = self.client.get_table(dataset_ref.table(temp_table_name))
@@ -272,19 +292,9 @@ class BigQueryClient:
             if not primary_key:
                 primary_key = target_table.schema[0].name
 
-            # Check if temp table exists before proceeding
-            try:
-                temp_table = self.client.get_table(
-                    self.client.dataset(dataset_name).table(temp_table_name)
-                )
-                if temp_table:
-                    # Delete any existing temp table first
-                    self.client.delete_table(
-                        self.client.dataset(dataset_name).table(temp_table_name)
-                    )
-            except:
-                # Table doesn't exist, which is fine
-                pass
+            # NOTE: we already deleted any pre-existing temp table before loading
+            # new data, so don't remove the temp table here (we need it for the
+            # MERGE). The final cleanup occurs after the merge below.
 
             # Construct SQL for upsert with better handling of duplicates
             sql = f"""

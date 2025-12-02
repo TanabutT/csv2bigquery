@@ -83,6 +83,9 @@ The application uses the following configuration parameters:
 - `services`: List of services to process
 - `service_account_path`: Path to the service account key file (optional)
 
+Additional note about region enforcement
+- `enforce_dataset_location` (optional, default True): When performing upserts, the client will check the dataset's actual region and by default will abort the upsert if it doesn't match the configured `region` in `config.json`. This prevents accidental cross-region temporary table creation and Merge queries failing due to region mismatches. Set `enforce_dataset_location` to False if you want to allow operations to proceed despite a dataset/region mismatch (not recommended).
+
 ## Supported Services
 
 The application supports the following services (configured in config.json):
