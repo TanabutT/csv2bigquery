@@ -26,7 +26,7 @@ class BigQueryClient:
             service_account_path: Path to service account key file (optional)
         """
         self.project_id = project_id
-        self.location = "asia-southeast1"
+        self.location = location
 
         # Initialize client with authentication
         if service_account_path:
@@ -134,7 +134,7 @@ class BigQueryClient:
             )
 
             load_job = self.client.load_table_from_uri(
-                gcs_uri, table_ref, job_config=job_config, location=self.location,
+                gcs_uri, table_ref, job_config=job_config, location="asia-southeast1",
             )
 
             load_job.result()  # Wait for job to complete
