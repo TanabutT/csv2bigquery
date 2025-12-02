@@ -2,10 +2,10 @@
   "project_id": "poc-piloturl-nonprod",
   "dataset_name_template": "dev_{service}_service",
   "region": "asia-southeast1",
-  "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data",
-  "csv_source_path": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data/*.csv",
+  "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data",
+  "csv_source_path": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/csv2bigquery/source_data/*.csv",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
-  "gcs_base_path_template": "sql-exports/{date}/parquetextract/{service}",
+  "gcs_base_path_template": "sql-exports/{date}/csvextract/{service}",
   "services": [
     "auth-service",
     "career-service",

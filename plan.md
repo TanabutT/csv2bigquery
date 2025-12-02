@@ -46,7 +46,7 @@ The configuration system uses templates for dynamic resource generation:
   "dataset_name_template": "dev_{service}_service",
   "region": "asia-southeast1",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
-  "gcs_base_path_template": "sql-exports/{date}/parquetextract/{service}",
+  "gcs_base_path_template": "sql-exports/{date}/csvextract/{service}",
   "services": [
     "auth-service",
     "career-service",
@@ -64,7 +64,7 @@ The configuration system uses templates for dynamic resource generation:
 
 Key configuration features:
 - `dataset_name_template`: Generates dataset names dynamically (e.g., "dev_career_service")
-- `gcs_base_path_template`: Generates GCS paths dynamically (e.g., "sql-exports/20251201/parquetextract/career-service")
+- `gcs_base_path_template`: Generates GCS paths dynamically (e.g., "sql-exports/20251201/csvextract/career-service")
 - `services`: List of services to process
 
 ## Implemented Features
@@ -251,7 +251,7 @@ python src/main.py --service career-service --date 20251201
 
 Result:
 - Creates dataset: `dev_career_service`
-- Processes CSV files from: `sql-exports/20251201/parquetextract/career-service`
+- Processes CSV files from: `sql-exports/20251201/csvextract/career-service`
 - Generates table for each CSV file
 - Validates all processed data
 - Creates report: `csv2bq_report_20251201.json`
