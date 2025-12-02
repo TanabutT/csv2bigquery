@@ -143,10 +143,17 @@ CSV2bigquery/
   "project_id": "poc-piloturl-nonprod",
   "dataset_name": "dev_career_service",
   "region": "asia-southeast1",
-  "parquet_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data",
-  "parquet_source_path": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data/*.csv",
+  "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data",
+  "csv": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data/*.csv",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
-  "gcs_base_path": "sql-exports-parquet/20251201/parquetextract/dev-career-service",
+  "gcs_base_path": "sql-exports/20251201/parquetextract/dev-career-service",
   "service_account_path": "./credentials/service-account.json"
 }
 in the future the CSV_source_path will move to google cloud storage gs://terra-mhesi-dp-poc-gcs-bronze-01/
+
+
+
+ Then add the function for new feature to rerun 
+     - rerun specific database service ( of that 9 services)
+     - rerun specific table in the specific database service
+        - table might have Dependencies table to run with but right now we don't have the list (just prepare arguments)
