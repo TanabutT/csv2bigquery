@@ -129,7 +129,9 @@ class BigQueryClient:
                 schema=schema,
                 write_disposition=write_disposition,
                 # max_bad_records=1,  # Allow some errors
-                allow_quoted_newlines=True
+                allow_quoted_newlines=True,
+                location=self.location,
+
             )
 
             load_job = self.client.load_table_from_uri(
