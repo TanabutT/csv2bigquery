@@ -623,9 +623,7 @@ def main():
         )
     else:
         # Validate all services
-        validation_results = validate_results(
-            validator, config, services, args.date, ""
-        )
+        validation_results = validate_results(validator, config, services, args.date)
 
     # Generate report
     report = {

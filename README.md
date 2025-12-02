@@ -62,7 +62,7 @@ csv2bigquery/
      "dataset_name": "dev_career_service",
      "region": "asia-southeast1",
      "gcs_bucket": "your-gcs-bucket-name",
-     "gcs_base_path": "sql-exports-parquet/20251201/parquetextract/dev-career-service",
+     "gcs_base_path": "sql-exports/20251201/csvextract/dev-career-service",
      "service_account_path": "./credentials/service-account.json"
    }
    ```

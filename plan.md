@@ -281,7 +281,7 @@ python src/main.py --service career-service --date 20251201
 
 Result:
 - Creates dataset: `dev_career_service`
-- Processes CSV files from: `sql-exports/20251201/parquetextract/career-service`
+- Processes CSV files from: `sql-exports/20251201/csvextract/career-service`
 - Generates table for each CSV file
 - **Processes files in parallel for faster execution**
 - Validates all processed data
