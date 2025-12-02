@@ -37,6 +37,16 @@ class BigQueryClient:
             # Use default credentials
             self.client = bigquery.Client(project=project_id)
 
+        # Increase connection pool size to handle parallel operations
+        import os
+
+        if "GOOGLE_CLOUD_CONNECTION_POOL_SIZE" in os.environ:
+            pool_size = int(os.environ["GOOGLE_CLOUD_CONNECTION_POOL_SIZE"])
+        else:
+            pool_size = 50  # Increase default to 50 to handle parallel operations
+
+        self.client._http_connection_pool_size = pool_size
+
         logger.info(f"BigQuery client initialized for project: {project_id}")
 
     def create_dataset(self, dataset_name: str, exists_ok: bool = True) -> bool:
@@ -214,9 +224,31 @@ class BigQueryClient:
                 logger.error(f"Target table {dataset_name}.{table_name} has no schema")
                 return False
 
-            primary_key = target_table.schema[0].name
+            # Find a suitable primary key (prefer id or first field)
+            primary_key = None
+            for field in target_table.schema:
+                if field.name.lower() == "id":
+                    primary_key = field.name
+                    break
 
-            # Construct SQL for upsert
+            if not primary_key:
+                primary_key = target_table.schema[0].name
+
+            # Check if temp table exists before proceeding
+            try:
+                temp_table = self.client.get_table(
+                    self.client.dataset(dataset_name).table(temp_table_name)
+                )
+                if temp_table:
+                    # Delete any existing temp table first
+                    self.client.delete_table(
+                        self.client.dataset(dataset_name).table(temp_table_name)
+                    )
+            except:
+                # Table doesn't exist, which is fine
+                pass
+
+            # Construct SQL for upsert with better handling of duplicates
             sql = f"""
             MERGE `{self.project_id}.{dataset_name}.{table_name}` AS target
             USING `{self.project_id}.{dataset_name}.{temp_table_name}` AS source
@@ -232,7 +264,10 @@ class BigQueryClient:
                 )
             }
             WHEN NOT MATCHED THEN
-              INSERT ROW
+              INSERT ({", ".join([field.name for field in target_table.schema])})
+              VALUES ({
+                ", ".join(["source." + field.name for field in target_table.schema])
+            })
             """
 
             query_job = self.client.query(sql)
