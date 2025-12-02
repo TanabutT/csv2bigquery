@@ -89,12 +89,44 @@ def create_datasets(bq_client: BigQueryClient, datasets: List[str]) -> None:
         bq_client.create_dataset(dataset, exists_ok=True)
 
 
+def get_dataset_name(config: Dict[str, Any], service: str) -> str:
+    """
+    Generate dataset name for a specific service using template
+
+    Args:
+        config: Configuration dictionary
+        service: Service name
+
+    Returns:
+        Dataset name string
+    """
+    template = config.get("dataset_name_template", "dev_{service}_service")
+    return template.format(service=service)
+
+
+def get_gcs_path(config: Dict[str, Any], service: str, date: str) -> str:
+    """
+    Generate GCS path for a specific service using template
+
+    Args:
+        config: Configuration dictionary
+        service: Service name
+        date: Date string
+
+    Returns:
+        GCS path string
+    """
+    template = config.get(
+        "gcs_base_path_template", "sql-exports/{date}/parquetextract/{service}"
+    )
+    return template.format(date=date, service=service)
+
+
 def process_service(
     bq_client: BigQueryClient,
     csv_reader: CSVReader,
     config: Dict[str, Any],
     service: str,
-    gcs_base_path: str,
     date_folder: str = "20251201",
     specific_table: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -106,7 +138,7 @@ def process_service(
         csv_reader: CSV reader instance
         config: Configuration dictionary
         service: Service name
-        gcs_base_path: Base path in GCS
+
         date_folder: Date folder for the export
 
     Returns:
@@ -114,8 +146,8 @@ def process_service(
     """
     logger.info(f"Processing service: {service}")
 
-    # Construct GCS path for this service
-    service_gcs_path = f"{gcs_base_path}/{service}"
+    # Construct GCS path for this service using config template
+    service_gcs_path = get_gcs_path(config, service, date_folder)
 
     # List CSV files for this service
     csv_files = csv_reader.list_csv_files_in_gcs(service_gcs_path)
@@ -165,8 +197,8 @@ def process_service(
 
             logger.info(f"Processing file: {csv_file} -> table: {table_name}")
 
-            # Check if table exists to determine write disposition
-            dataset_name = f"dev_{service}"
+            # Get dataset name for this service using config template
+            dataset_name = get_dataset_name(config, service)
             table_exists = bq_client.table_exists(dataset_name, table_name)
 
             # Create or update table
@@ -223,7 +255,6 @@ def validate_single_service_table(
     config: Dict[str, Any],
     service: str,
     table_name: str,
-    gcs_base_path: str,
     date_folder: str = "20251201",
 ) -> Dict[str, Any]:
     """
@@ -234,7 +265,7 @@ def validate_single_service_table(
         config: Configuration dictionary
         service: Service name
         table_name: Table name to validate
-        gcs_base_path: Base path in GCS
+
         date_folder: Date folder for the export
 
     Returns:
@@ -296,7 +327,6 @@ def validate_results(
     validator: Validator,
     config: Dict[str, Any],
     services: List[str],
-    gcs_base_path: str,
     date_folder: str = "20251201",
 ) -> Dict[str, Any]:
     """
@@ -306,7 +336,7 @@ def validate_results(
         validator: Validator instance
         config: Configuration dictionary
         services: List of services to validate
-        gcs_base_path: Base path in GCS
+
         date_folder: Date folder for the export
 
     Returns:
@@ -402,18 +432,21 @@ def main():
     # Initialize validator
     validator = Validator(bq_client, csv_reader)
 
-    # Define services to process
-    services = [
-        "auth-service",
-        "career-service",
-        "data-protection-service",
-        "digital-credential-service",
-        "document-service",
-        "learning-service",
-        "notification-service",
-        "portfolio-service",
-        "question-bank-service",
-    ]
+    # Get services list from configuration
+    services = config.get(
+        "services",
+        [
+            "auth-service",
+            "career-service",
+            "data-protection-service",
+            "digital-credential-service",
+            "document-service",
+            "learning-service",
+            "notification-service",
+            "portfolio-service",
+            "question-bank-service",
+        ],
+    )
 
     # Override with specific service if provided
     if args.service:
@@ -421,9 +454,6 @@ def main():
             logger.error(f"Invalid service: {args.service}")
             return 1
         services = [args.service]
-
-    # Construct GCS base path
-    gcs_base_path = f"sql-exports/{args.date}/parquetextract"
 
     # Validate arguments
     if args.table and not args.service:
@@ -434,8 +464,8 @@ def main():
         logger.error("--rerun requires --service to be specified")
         return 1
 
-    # Create datasets for all services
-    datasets = [f"dev_{service}" for service in services]
+    # Create datasets for all services using config template
+    datasets = [get_dataset_name(config, service) for service in services]
     create_datasets(bq_client, datasets)
 
     # Process services
@@ -451,7 +481,6 @@ def main():
                 csv_reader,
                 config,
                 service,
-                gcs_base_path,
                 args.date,
                 specific_table,
             )
@@ -461,13 +490,11 @@ def main():
     if args.rerun and args.table:
         # Validate only the specific table
         validation_results = validate_single_service_table(
-            validator, config, args.service, args.table, gcs_base_path, args.date
+            validator, config, args.service, args.table, "", args.date
         )
     else:
         # Validate all services
-        validation_results = validate_results(
-            validator, config, services, gcs_base_path, args.date
-        )
+        validation_results = validate_results(validator, config, services, args.date)
 
     # Generate report
     report = {

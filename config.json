@@ -1,10 +1,21 @@
 {
   "project_id": "poc-piloturl-nonprod",
-  "dataset_name": "dev_career_service",
+  "dataset_name_template": "dev_{service}_service",
   "region": "asia-southeast1",
   "csv_source_path_folder": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data",
   "csv_source_path": "/Users/tanabut.t/Documents/PlanB_project/gcp_cloudcomposer/parquet2bigquery/source_data/*.csv",
   "gcs_bucket": "terra-mhesi-dp-poc-gcs-bronze-01",
-  "gcs_base_path": "sql-exports/20251201/parquetextract/dev-career-service",
+  "gcs_base_path_template": "sql-exports/{date}/parquetextract/{service}",
+  "services": [
+    "auth-service",
+    "career-service",
+    "data-protection-service",
+    "digital-credential-service",
+    "document-service",
+    "learning-service",
+    "notification-service",
+    "portfolio-service",
+    "question-bank-service"
+  ],
   "service_account_path": "./credentials/service-account.json"
 }
