@@ -51,7 +51,7 @@ CSV2bigquery/
 - Function to get table schema and metadata
 
 ### 4. CSV Reader Module (`CSV_reader.py`)
-- Function to scan directory for CSV files
+- Function to scan directory for CSV files in google cloud storage
 - Function to read CSV file metadata
 - Function to extract schema from CSV files
 - Function to read CSV data into pandas DataFrame for validation
