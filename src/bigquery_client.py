@@ -63,8 +63,7 @@ class BigQueryClient:
         try:
             dataset_ref = self.client.dataset(dataset_name)
             dataset = bigquery.Dataset(dataset_ref)
-            # dataset.location = self.location
-            dataset.location = "asia-southeast1"
+            dataset.location = self.location
 
             dataset = self.client.create_dataset(dataset, exists_ok=exists_ok)
             logger.info(f"Dataset {dataset_name} created or already exists")
@@ -131,7 +130,7 @@ class BigQueryClient:
                 write_disposition=write_disposition,
                 # max_bad_records=1,  # Allow some errors
                 allow_quoted_newlines=True,
-                location=self.location,
+                location="asia-southeast1",
 
             )
 
