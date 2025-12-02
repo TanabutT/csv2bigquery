@@ -17,15 +17,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Try to import db-dtypes, but use fallback if not available
-try:
-    from db_dtypes import compare_dtypes
-
-    DB_DTYPES_AVAILABLE = True
-except ImportError:
-    logger.warning("db-dtypes package not available, using fallback validation")
-    DB_DTYPES_AVAILABLE = False
-
 
 class Validator:
     """Validator for checking completeness and correctness of ETL process"""
