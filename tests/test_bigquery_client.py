@@ -3,7 +3,7 @@ Unit tests for BigQuery client module
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 
 from src.bigquery_client import BigQueryClient
 
@@ -112,7 +112,11 @@ class TestBigQueryClient(unittest.TestCase):
 
         # Verify
         self.assertTrue(result)
+        # Ensure load job called with client-configured location
         mock_instance.load_table_from_uri.assert_called_once()
+        mock_instance.load_table_from_uri.assert_called_once_with(
+            gcs_uri, ANY, job_config=ANY, location=self.location
+        )
         mock_load_job.result.assert_called_once()
 
     @patch("src.bigquery_client.bigquery.Client")

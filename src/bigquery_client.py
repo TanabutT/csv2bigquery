@@ -133,8 +133,10 @@ class BigQueryClient:
 
             )
 
+            # Use the client's configured location for load jobs so temp tables
+            # and target datasets are created in the same region.
             load_job = self.client.load_table_from_uri(
-                gcs_uri, table_ref, job_config=job_config, location="asia-southeast1"
+                gcs_uri, table_ref, job_config=job_config, location=self.location
             )
 
             load_job.result()  # Wait for job to complete

@@ -196,6 +196,7 @@ Errors are logged with appropriate detail levels, and the application continues 
 2. **Dataset Naming**: Corrected dataset name generation to handle hyphens in service names properly
 3. **Prisma File Filtering**: Added automatic filtering to skip prisma migration files during processing
 4. **CSV Reader Enhancement**: Improved CSV reading to use GCS client directly instead of public URLs
+5. **Region/Location Fix**: Ensure BigQuery load jobs use the configured `region`/location so temporary tables are created in the same dataset region to avoid cross-region errors (e.g., Not found: Table ..._temp was not found in location). The `BigQueryClient` now uses the configured region for load jobs.
 
 ## Testing
 
