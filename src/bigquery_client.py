@@ -130,12 +130,11 @@ class BigQueryClient:
                 write_disposition=write_disposition,
                 # max_bad_records=1,  # Allow some errors
                 allow_quoted_newlines=True,
-                location="asia-southeast1",
 
             )
 
             load_job = self.client.load_table_from_uri(
-                gcs_uri, table_ref, job_config=job_config
+                gcs_uri, table_ref, job_config=job_config, location=self.location,
             )
 
             load_job.result()  # Wait for job to complete
