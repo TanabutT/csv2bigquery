@@ -26,7 +26,7 @@ class BigQueryClient:
             service_account_path: Path to service account key file (optional)
         """
         self.project_id = project_id
-        self.location = location
+        self.location = "asia-southeast1"
 
         # Initialize client with authentication
         if service_account_path:
