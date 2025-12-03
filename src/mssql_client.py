@@ -110,3 +110,50 @@ class MSSQLClient:
         except Exception as e:
             logger.error(f"Failed to get row count for table {table_name}: {e}")
             return 0
+
+    def get_table_schema(self, table_name: str) -> Dict[str, str]:
+        """
+        Return column names and data types for a SQL Server table.
+
+        Returns:
+            Dict mapping column name -> data type (as string)
+        """
+        query = f"""
+        SELECT COLUMN_NAME, DATA_TYPE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = '{table_name}'
+        ORDER BY ORDINAL_POSITION
+        """
+
+        try:
+            rows = self._execute_query(query)
+            schema = {row[0]: row[1] for row in rows}
+            logger.info(f"Schema for {table_name}: {schema}")
+            return schema
+        except Exception as e:
+            logger.error(f"Failed to get schema for {table_name}: {e}")
+            return {}
+
+    def get_sample_rows(self, table_name: str, sample_size: int = 100) -> Optional[list]:
+        """
+        Return a sample of rows from the table as list of dicts.
+
+        On SQL Server, ORDER BY NEWID() is a common way to randomize rows.
+        """
+        try:
+            # First get columns
+            schema = self.get_table_schema(table_name)
+            if not schema:
+                return None
+            cols = ", ".join([f"[{c}]" for c in schema.keys()])
+            query = f"SELECT TOP ({sample_size}) {cols} FROM [{table_name}] ORDER BY NEWID()"
+            cursor = self.cnxn.cursor()
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            col_names = [desc[0] for desc in cursor.description]
+            # Convert to list of dicts
+            result = [dict(zip(col_names, row)) for row in rows]
+            return result
+        except Exception as e:
+            logger.error(f"Failed to fetch sample rows for {table_name}: {e}")
+            return None

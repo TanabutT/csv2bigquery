@@ -114,7 +114,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
         return {}
 
 
-def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReader]:
+def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReader, Optional[MSSQLClient]]:
     """
     Initialize BigQuery client and CSV reader based on configuration
 
@@ -137,7 +137,29 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
         service_account_path=config.get("service_account_path"),
     )
 
-    return bq_client, csv_reader
+    # Optionally initialize MSSQL client if configuration provided
+    mssql_client = None
+    if config.get("mssql"):
+        m = config.get("mssql")
+        try:
+            try:
+                from mssql_client import MSSQLClient
+            except ImportError:
+                from src.mssql_client import MSSQLClient
+
+            mssql_client = MSSQLClient(
+                server=m.get("server"),
+                database=m.get("database"),
+                username=m.get("username"),
+                password=m.get("password"),
+                driver=m.get("driver", "{ODBC Driver 17 for SQL Server}"),
+                timeout=m.get("timeout", 30),
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize MSSQL client: {e}")
+            mssql_client = None
+
+    return bq_client, csv_reader, mssql_client
 
 
 def create_datasets(bq_client: BigQueryClient, datasets: List[str]) -> None:
@@ -535,6 +557,12 @@ def main():
         help="Only run validation, skip data processing",
     )
     parser.add_argument(
+        "--validate-source",
+        choices=["gcs", "mssql"],
+        default="gcs",
+        help="Source to validate from: 'gcs' (CSV files) or 'mssql' (SQL Server)",
+    )
+    parser.add_argument(
         "--service",
         help="Process only the specified service (if not provided, all services are processed)",
     )
@@ -561,11 +589,28 @@ def main():
         logger.error("Failed to load configuration. Exiting.")
         return 1
 
-    # Initialize clients
-    bq_client, csv_reader = initialize_clients(config)
+    # Initialize clients (optionally includes MSSQL client)
+    bq_client, csv_reader, mssql_client = initialize_clients(config)
 
-    # Initialize validator
-    validator = Validator(bq_client, csv_reader)
+    # Choose Validator implementation depending on source
+    # If MSSQL validation is requested, ensure MSSQL client is available
+    if args.validate_source == "mssql":
+        if not mssql_client:
+            logger.error("MSSQL validation requested but MSSQL configuration is missing")
+            return 1
+        try:
+            # import MSSQL-aware validator
+            try:
+                from validator_mssql import Validator as MSSQLValidator
+            except ImportError:
+                from src.validator_mssql import Validator as MSSQLValidator
+
+            validator = MSSQLValidator(bq_client, csv_reader, mssql_client=mssql_client)
+        except Exception as e:
+            logger.error(f"Failed to initialize MSSQL Validator: {e}")
+            return 1
+    else:
+        validator = Validator(bq_client, csv_reader)
 
     # Get services list from configuration
     services = config.get(
@@ -642,12 +687,59 @@ def main():
     # Validate results
     if args.rerun and args.table:
         # Validate only the specific table
-        validation_results = validate_single_service_table(
-            validator, config, args.service, args.table, args.date
-        )
+        if args.validate_source == "gcs":
+            validation_results = validate_single_service_table(
+                validator, config, args.service, args.table, args.date
+            )
+        else:
+            # MSSQL: validate single table by invoking MSSQL-specific validator methods
+            service = args.service
+            dataset_name = get_dataset_name(config, service).lower()
+            mssql_db = config.get("mssql", {}).get("database")
+
+            completeness = validator.validate_completeness_mssql(
+                dataset_name, mssql_db, tables=[args.table]
+            )
+            correctness = validator.validate_correctness_mssql(
+                dataset_name, mssql_db, tables=[args.table]
+            )
+
+            validation_results = {
+                "status": "success" if completeness["status"] == "success" and correctness["status"] == "success" else "warning",
+                "service": args.service,
+                "table": args.table,
+                "completeness": completeness,
+                "correctness": correctness,
+            }
     else:
         # Validate all services
-        validation_results = validate_results(validator, config, services, args.date)
+        if args.validate_source == "gcs":
+            validation_results = validate_results(validator, config, services, args.date)
+        else:
+            # MSSQL-based validation across services uses the MSSQL client database scope
+            validation_results = {"status": "success", "message": "Validation completed", "services": {}}
+            mssql_db = config.get("mssql", {}).get("database")
+            for service in services:
+                service_name_for_dataset = service.replace("-", "_")
+                dataset_name = get_dataset_name(config, service_name_for_dataset).lower()
+
+                completeness = validator.validate_completeness_mssql(dataset_name, mssql_db)
+                correctness = validator.validate_correctness_mssql(dataset_name, mssql_db)
+
+                validation_results["services"][service] = {
+                    "completeness": completeness,
+                    "correctness": correctness,
+                    "status": "success"
+                    if completeness.get("status") == "success" and correctness.get("status") == "success"
+                    else "warning",
+                }
+
+            # Collapse overall status
+            overall_ok = all(
+                v["status"] == "success" for v in validation_results["services"].values()
+            )
+            if not overall_ok:
+                validation_results["status"] = "warning"
 
     # Generate report
     report = {

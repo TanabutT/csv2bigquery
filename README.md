@@ -83,6 +83,27 @@ The application uses the following configuration parameters:
 - `services`: List of services to process
 - `service_account_path`: Path to the service account key file (optional)
 
+MSSQL validation (optional)
+If you'd like to validate BigQuery tables directly against a SQL Server source instead of a CSV source, add an `mssql` section to your `config.json` (optional):
+
+```json
+"mssql": {
+   "server": "sql.example.com",
+   "database": "db_name",
+   "username": "sql_user",
+   "password": "secret",
+   "driver": "{ODBC Driver 17 for SQL Server}",
+   "timeout": 30
+}
+```
+
+You can select the validation source on the command line using `--validate-source` (default `gcs`). Supported values: `gcs` (validate against CSV files in GCS) or `mssql` (validate directly against SQL Server):
+
+```bash
+# Validate using MSSQL as the source
+python src/main.py --validate-only --validate-source mssql
+```
+
 Additional note about region enforcement
 - `enforce_dataset_location` (optional, default True): When performing upserts, the client will check the dataset's actual region and by default will abort the upsert if it doesn't match the configured `region` in `config.json`. This prevents accidental cross-region temporary table creation and Merge queries failing due to region mismatches. Set `enforce_dataset_location` to False if you want to allow operations to proceed despite a dataset/region mismatch (not recommended).
 

@@ -24,7 +24,8 @@ class Validator:
     def __init__(
         self,
         bigquery_client: BigQueryClient,
-        csv_reader: CSVReader,
+        csv_reader: Optional[CSVReader] = None,
+        mssql_client: Optional[Any] = None,
         sample_size: int = 100,
     ):
         """
@@ -37,6 +38,8 @@ class Validator:
         """
         self.bigquery_client = bigquery_client
         self.csv_reader = csv_reader
+        # Optional MSSQL client for validating against SQL Server as source
+        self.mssql_client = mssql_client
         self.sample_size = sample_size
         self.validation_results = {}
 
@@ -113,6 +116,88 @@ class Validator:
         if not all_files_processed:
             results["status"] = "warning"
             results["message"] = "Some files have row count mismatches"
+
+        return results
+
+    # -------------------------------------------
+    # MSSQL-based validation
+    # -------------------------------------------
+    def validate_completeness_mssql(
+        self, dataset_name: str, database_name: str, tables: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate completeness by comparing row counts between SQL Server and BigQuery
+
+        Args:
+            dataset_name: BigQuery dataset name
+            database_name: SQL Server database name (used for listing tables)
+            tables: Optional list of table names to validate (if None, list all tables)
+
+        Returns:
+            Dictionary with validation results
+        """
+        if not self.mssql_client:
+            return {
+                "status": "failed",
+                "message": "MSSQL client not provided for MSSQL validation",
+            }
+
+        logger.info(f"Starting MSSQL completeness validation for dataset: {dataset_name}")
+
+        if tables is None:
+            try:
+                tables = self.mssql_client.list_tables(database_name)
+            except Exception as e:
+                return {
+                    "status": "failed",
+                    "message": f"Failed to list tables in SQL Server DB {database_name}: {e}",
+                }
+
+        results = {
+            "status": "success",
+            "message": "MSSQL completeness validation completed",
+            "details": {"total_tables": len(tables), "table_results": []},
+        }
+
+        all_match = True
+        total_mssql_rows = 0
+        total_bq_rows = 0
+
+        for table_name in tables:
+            try:
+                mssql_count = self.mssql_client.get_row_count(table_name)
+            except Exception:
+                mssql_count = 0
+
+            bq_count = self.bigquery_client.get_row_count(dataset_name, table_name)
+
+            table_exists = self.bigquery_client.table_exists(dataset_name, table_name)
+            rows_match = mssql_count == bq_count
+
+            results["details"]["table_results"].append(
+                {
+                    "table_name": table_name,
+                    "mssql_rows": mssql_count,
+                    "bq_rows": bq_count,
+                    "table_exists": table_exists,
+                    "rows_match": rows_match,
+                    "status": "success" if rows_match else "failed",
+                }
+            )
+
+            total_mssql_rows += mssql_count
+            total_bq_rows += bq_count
+
+            if not rows_match:
+                all_match = False
+
+        results["details"]["all_tables_match"] = all_match
+        results["details"]["total_mssql_rows"] = total_mssql_rows
+        results["details"]["total_bq_rows"] = total_bq_rows
+
+        if not all_match:
+            results["status"] = "warning"
+            results["message"] = "Some tables have row count mismatches"
 
         return results
 
@@ -271,6 +356,89 @@ class Validator:
         if not all_files_valid:
             results["status"] = "warning"
             results["message"] = "Some files have validation issues"
+
+        return results
+
+    def validate_correctness_mssql(
+        self,
+        dataset_name: str,
+        database_name: str,
+        tables: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Validate correctness by comparing SQL Server source (schema + sample rows)
+        against BigQuery destination.
+
+        Args:
+            dataset_name: BigQuery dataset name
+            database_name: SQL Server database name (used for listing tables)
+            tables: Optional list of table names to validate (if None, validate all)
+
+        Returns:
+            Dictionary with validation results
+        """
+        if not self.mssql_client:
+            return {
+                "status": "failed",
+                "message": "MSSQL client not provided for MSSQL validation",
+            }
+
+        logger.info(f"Starting MSSQL correctness validation for dataset: {dataset_name}")
+
+        if tables is None:
+            try:
+                tables = self.mssql_client.list_tables(database_name)
+            except Exception as e:
+                return {
+                    "status": "failed",
+                    "message": f"Failed to list tables in SQL Server DB {database_name}: {e}",
+                }
+
+        results = {
+            "status": "success",
+            "message": "MSSQL correctness validation completed",
+            "details": {"total_tables": len(tables), "table_results": []},
+        }
+
+        all_valid = True
+
+        for table_name in tables:
+            # Skip if BQ table doesn't exist
+            if not self.bigquery_client.table_exists(dataset_name, table_name):
+                continue
+
+            # Get MSSQL schema
+            try:
+                mssql_schema = self.mssql_client.get_table_schema(table_name)
+            except Exception:
+                mssql_schema = {}
+
+            # Get BQ schema
+            bq_table_info = self.bigquery_client.get_table_info(dataset_name, table_name)
+            bq_schema = {field["name"]: field["type"] for field in bq_table_info.get("schema", [])}
+
+            schema_match = self._compare_schemas(mssql_schema, bq_schema)
+
+            # Sample rows comparison
+            sample_valid = self._compare_sample_data_mssql(dataset_name, table_name)
+
+            results["details"]["table_results"].append(
+                {
+                    "table_name": table_name,
+                    "schema_match": schema_match,
+                    "sample_match": sample_valid,
+                    "status": "success" if schema_match and sample_valid else "failed",
+                }
+            )
+
+            if not schema_match or not sample_valid:
+                all_valid = False
+
+        results["details"]["all_tables_valid"] = all_valid
+
+        if not all_valid:
+            results["status"] = "warning"
+            results["message"] = "Some tables have validation issues"
 
         return results
 
@@ -555,8 +723,25 @@ class Validator:
             if csv_type.upper() != bq_type.upper():
                 # Allow some type mappings
                 type_mappings = {
+                    # SQL Server -> BigQuery
                     "INT": "INTEGER",
+                    "BIGINT": "INTEGER",
+                    "SMALLINT": "INTEGER",
+                    "TINYINT": "INTEGER",
+                    "VARCHAR": "STRING",
+                    "NVARCHAR": "STRING",
+                    "TEXT": "STRING",
+                    "CHAR": "STRING",
+                    "NCHAR": "STRING",
+                    "FLOAT": "FLOAT",
                     "FLOAT64": "FLOAT",
+                    "REAL": "FLOAT",
+                    "DECIMAL": "NUMERIC",
+                    "NUMERIC": "NUMERIC",
+                    "MONEY": "NUMERIC",
+                    "DATETIME": "DATETIME",
+                    "DATETIME2": "DATETIME",
+                    "SMALLDATETIME": "DATETIME",
                 }
 
                 mapped_type = type_mappings.get(csv_type.upper(), csv_type.upper())
@@ -612,6 +797,44 @@ class Validator:
             return True
         except Exception as e:
             logger.error(f"Error comparing sample data: {e}")
+            return False
+
+    def _compare_sample_data_mssql(self, dataset_name: str, table_name: str) -> bool:
+        """
+        Compare sample rows between MSSQL source and BigQuery table.
+
+        For efficiency we only compare column sets and counts of sampled rows.
+        """
+        try:
+            if not self.mssql_client:
+                logger.error("MSSQL client not provided")
+                return False
+
+            sample_size = self.sample_size
+
+            # Get sample rows from MSSQL
+            mssql_rows = self.mssql_client.get_sample_rows(table_name, sample_size)
+            if not mssql_rows:
+                logger.warning(f"Empty or unreadable MSSQL table: {table_name}")
+                return False
+
+            # Get sample rows from BigQuery
+            query = f"SELECT * FROM `{self.bigquery_client.project_id}.{dataset_name}.{table_name}` ORDER BY RAND() LIMIT {sample_size}"
+            bq_df = self.bigquery_client.client.query(query).to_dataframe()
+            if bq_df.empty:
+                logger.warning(f"Empty BigQuery table: {dataset_name}.{table_name}")
+                return False
+
+            # Compare column sets
+            mssql_cols = set(mssql_rows[0].keys())
+            bq_cols = set(bq_df.columns)
+            if mssql_cols != bq_cols:
+                logger.warning(f"Column name mismatch between MSSQL and BQ for {table_name}")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Error comparing sample data MSSQL <-> BQ: {e}")
             return False
 
     def _compare_sample_data_local(
