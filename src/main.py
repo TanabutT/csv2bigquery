@@ -179,6 +179,23 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
                 driver=m.get("driver", "{ODBC Driver 17 for SQL Server}"),
                 timeout=m.get("timeout", 30),
             )
+            # Optionally run an initial connectivity test
+            if m.get("test_connection"):
+                try:
+                    ok = mssql_client.test_connection()
+                    if not ok:
+                        msg = "MSSQL client connection test failed"
+                        if m.get("fail_on_connection_test"):
+                            logger.error(msg + ". Aborting initialization as configured.")
+                            raise RuntimeError(msg)
+                        else:
+                            logger.error(msg + ". Continuing without MSSQL client.")
+                            mssql_client = None
+                except Exception as e:
+                    logger.error(f"Error during MSSQL connection test: {e}")
+                    if m.get("fail_on_connection_test"):
+                        raise
+                    mssql_client = None
         except Exception as e:
             logger.error(f"Failed to initialize MSSQL client: {e}")
             mssql_client = None

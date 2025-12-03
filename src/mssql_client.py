@@ -30,14 +30,6 @@ class MSSQLClient:
             driver: ODBC driver
             timeout: Connection timeout in seconds
         """
-        # Load configuration
-        try:
-            with open(args.config, "r") as f:
-                config = json.load(f)
-            return config
-        except Exception as e:
-            logger.error(f"Error loading configuration from {config_path}: {e}")
-            return {}
     
         # Accept either an explicit connection string, or individual params.
         # If connection_string is provided it takes precedence and will be
@@ -177,3 +169,26 @@ class MSSQLClient:
         except Exception as e:
             logger.error(f"Failed to fetch sample rows for {table_name}: {e}")
             return None
+
+    def test_connection(self, test_query: str = "SELECT 1") -> bool:
+        """
+        Perform a simple connectivity test against the MSSQL server.
+
+        Returns True if the client can successfully execute the test_query, False otherwise.
+        """
+        try:
+            # If the connection hasn't been established, try to connect
+            if not self.cnxn:
+                self._connect()
+
+            # Execute a small test query
+            rows = self._execute_query(test_query)
+            if rows is None:
+                logger.warning("MSSQL test query returned no rows")
+                return False
+
+            logger.info("MSSQL connectivity test succeeded")
+            return True
+        except Exception as e:
+            logger.error(f"MSSQL connectivity test failed: {e}")
+            return False

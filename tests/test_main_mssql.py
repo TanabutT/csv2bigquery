@@ -111,6 +111,68 @@ class TestMainMSSQL(unittest.TestCase):
         self.assertIsNotNone(csv_reader)
         self.assertIsNone(mssql_client)
 
+    def test_initialize_clients_with_connection_test_success(self):
+        config = {
+            "project_id": "p1",
+            "gcs_bucket": "b",
+            "service_account_path": "/tmp/sa.json",
+            "mssql": {
+                "server": "sql.example",
+                "database": "mydb",
+                "username": "u",
+                "password": "p",
+                "test_connection": True,
+            },
+        }
+
+        import sys
+        fake_mod = MagicMock()
+        inst = MagicMock()
+        inst.test_connection.return_value = True
+        fake_mod.MSSQLClient = MagicMock(return_value=inst)
+        sys.modules["mssql_client"] = fake_mod
+
+        with patch("src.main.BigQueryClient") as mock_bq, patch("src.main.CSVReader") as mock_csv:
+            mock_bq.return_value = MagicMock()
+            mock_csv.return_value = MagicMock()
+            bq, csv_reader, mssql_client = main.initialize_clients(config)
+
+        self.assertIsNotNone(mssql_client)
+        # ensure test_connection was called
+        inst.test_connection.assert_called_once()
+        del sys.modules["mssql_client"]
+
+    def test_initialize_clients_with_connection_test_failure(self):
+        config = {
+            "project_id": "p1",
+            "gcs_bucket": "b",
+            "service_account_path": "/tmp/sa.json",
+            "mssql": {
+                "server": "sql.example",
+                "database": "mydb",
+                "username": "u",
+                "password": "p",
+                "test_connection": True,
+            },
+        }
+
+        import sys
+        fake_mod = MagicMock()
+        inst = MagicMock()
+        inst.test_connection.return_value = False
+        fake_mod.MSSQLClient = MagicMock(return_value=inst)
+        sys.modules["mssql_client"] = fake_mod
+
+        with patch("src.main.BigQueryClient") as mock_bq, patch("src.main.CSVReader") as mock_csv:
+            mock_bq.return_value = MagicMock()
+            mock_csv.return_value = MagicMock()
+            bq, csv_reader, mssql_client = main.initialize_clients(config)
+
+        # When test_connection fails, initialize_clients should return None for mssql_client
+        self.assertIsNone(mssql_client)
+        inst.test_connection.assert_called_once()
+        del sys.modules["mssql_client"]
+
 
 if __name__ == "__main__":
     unittest.main()

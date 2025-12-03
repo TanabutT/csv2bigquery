@@ -104,6 +104,22 @@ You can select the validation source on the command line using `--validate-sourc
 python src/main.py --validate-only --validate-source mssql
 ```
 
+Connection testing and startup behavior
+If you want the application to verify connectivity to your MSSQL server on startup, add the `test_connection` flag under the `mssql` configuration and set it to `true`. When enabled, initialize_clients will call `MSSQLClient.test_connection()` after building the client.
+
+Additionally, if you want initialization to fail (raise an error) when this connectivity test fails, set `fail_on_connection_test` to `true`. Example:
+
+```json
+"mssql": {
+   "secret_name": "projects/810737581373/secrets/mssql-conn-string",
+   "database": "mydb",
+   "test_connection": true,
+   "fail_on_connection_test": false
+}
+```
+
+When `test_connection` is true and returns false, initialize_clients will either continue (and return None for the MSSQL client) or raise an exception if `fail_on_connection_test` is true.
+
 Additional note about region enforcement
 - `enforce_dataset_location` (optional, default True): When performing upserts, the client will check the dataset's actual region and by default will abort the upsert if it doesn't match the configured `region` in `config.json`. This prevents accidental cross-region temporary table creation and Merge queries failing due to region mismatches. Set `enforce_dataset_location` to False if you want to allow operations to proceed despite a dataset/region mismatch (not recommended).
 
