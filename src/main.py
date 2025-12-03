@@ -147,11 +147,35 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
             except ImportError:
                 from src.mssql_client import MSSQLClient
 
+            # Support obtaining a MSSQL connection string from Secret Manager
+            connection_string = None
+            if m.get("secret_name") or m.get("use_secret_manager"):
+                try:
+                    from google.cloud import secretmanager
+
+                    secret_name = m.get(
+                        "secret_name",
+                        "projects/810737581373/secrets/mssql-conn-string/versions/latest",
+                    )
+                    # if version not provided, assume latest
+                    if "/versions/" not in secret_name:
+                        secret_name = secret_name.rstrip("/") + "/versions/latest"
+
+                    client_sm = secretmanager.SecretManagerServiceClient()
+                    response = client_sm.access_secret_version(name=secret_name)
+                    connection_string = (
+                        response.payload.data.decode("UTF-8")
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to fetch MSSQL connection string from Secret Manager: {e}")
+                    connection_string = None
+
             mssql_client = MSSQLClient(
                 server=m.get("server"),
                 database=m.get("database"),
                 username=m.get("username"),
                 password=m.get("password"),
+                connection_string=connection_string,
                 driver=m.get("driver", "{ODBC Driver 17 for SQL Server}"),
                 timeout=m.get("timeout", 30),
             )

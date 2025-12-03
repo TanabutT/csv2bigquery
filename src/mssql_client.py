@@ -1,4 +1,6 @@
 import pyodbc
+import json
+import argparse
 import logging
 from typing import List, Optional, Any, Dict
 
@@ -9,10 +11,11 @@ logger.setLevel(logging.INFO)
 class MSSQLClient:
     def __init__(
         self,
-        server: str,
+        server: Optional[str] = None,
         database: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        connection_string: Optional[str] = None,
         driver: str = "{ODBC Driver 17 for SQL Server}",
         timeout: int = 30,
     ):
@@ -27,7 +30,20 @@ class MSSQLClient:
             driver: ODBC driver
             timeout: Connection timeout in seconds
         """
+        # Load configuration
+        try:
+            with open(args.config, "r") as f:
+                config = json.load(f)
+            return config
+        except Exception as e:
+            logger.error(f"Error loading configuration from {config_path}: {e}")
+            return {}
+    
+        # Accept either an explicit connection string, or individual params.
+        # If connection_string is provided it takes precedence and will be
+        # used directly when opening the pyodbc connection.
         self.server = server
+        self.connection_string = connection_string
         self.database = database
         self.username = username
         self.password = password
@@ -42,7 +58,11 @@ class MSSQLClient:
     # --------------------------------------------------------
     def _connect(self):
         try:
-            conn_str = (
+            # If a full connection string was provided, use it verbatim
+            if self.connection_string:
+                conn_str = self.connection_string
+            else:
+                conn_str = (
                 f"DRIVER={self.driver};"
                 f"SERVER={self.server};"
                 f"Database={self.database};"
