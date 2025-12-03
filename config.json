@@ -17,5 +17,5 @@
     "portfolio-service",
     "question-bank-service"
   ],
-  "service_account_path": "./credentials/service-account.json",
+  "service_account_path": "./credentials/service-account.json"
 }
