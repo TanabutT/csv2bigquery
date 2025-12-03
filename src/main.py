@@ -148,6 +148,10 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
                 from src.mssql_client import MSSQLClient
 
             # Support obtaining a MSSQL connection string from Secret Manager
+            # The MSSQLClient now requires a complete ODBC-style connection
+            # string. Prefer secret-manager or an explicit connection_string in
+            # the config. We will not attempt to assemble a connection string
+            # from server/username/password pieces.
             connection_string = None
             if m.get("secret_name") or m.get("use_secret_manager"):
                 try:
@@ -170,15 +174,21 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
                     logger.error(f"Failed to fetch MSSQL connection string from Secret Manager: {e}")
                     connection_string = None
 
-            mssql_client = MSSQLClient(
-                server=m.get("server"),
-                database=m.get("database"),
-                username=m.get("username"),
-                password=m.get("password"),
-                connection_string=connection_string,
-                driver=m.get("driver", "{ODBC Driver 17 for SQL Server}"),
-                timeout=m.get("timeout", 30),
-            )
+            # Allow an explicit connection_string in the config to override
+            # Secret Manager if present.
+            connection_string = connection_string or m.get("connection_string")
+
+            if not connection_string:
+                logger.info(
+                    "No MSSQL connection string available (neither secret nor config). Skipping MSSQL client initialization."
+                )
+                mssql_client = None
+            else:
+                mssql_client = MSSQLClient(
+                    connection_string=connection_string,
+                    driver=m.get("driver", "{ODBC Driver 17 for SQL Server}"),
+                    timeout=m.get("timeout", 30),
+                )
             # Optionally run an initial connectivity test
             if m.get("test_connection"):
                 try:
