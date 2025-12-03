@@ -123,14 +123,17 @@ class Validator:
     # MSSQL-based validation
     # -------------------------------------------
     def validate_completeness_mssql(
-        self, dataset_name: str, database_name: str, tables: Optional[List[str]] = None
+        self,
+        dataset_name: str,
+        database_name: Optional[str] = None,
+        tables: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Validate completeness by comparing row counts between SQL Server and BigQuery
 
         Args:
             dataset_name: BigQuery dataset name
-            database_name: SQL Server database name (used for listing tables)
+            database_name: Optional SQL Server database name (used for listing tables, if None uses connection string DB)
             tables: Optional list of table names to validate (if None, list all tables)
 
         Returns:
@@ -142,15 +145,18 @@ class Validator:
                 "message": "MSSQL client not provided for MSSQL validation",
             }
 
-        logger.info(f"Starting MSSQL completeness validation for dataset: {dataset_name}")
+        logger.info(
+            f"Starting MSSQL completeness validation for dataset: {dataset_name}"
+        )
 
         if tables is None:
             try:
                 tables = self.mssql_client.list_tables(database_name)
             except Exception as e:
+                db_msg = f" in SQL Server DB {database_name}" if database_name else ""
                 return {
                     "status": "failed",
-                    "message": f"Failed to list tables in SQL Server DB {database_name}: {e}",
+                    "message": f"Failed to list tables{db_msg}: {e}",
                 }
 
         results = {
@@ -362,7 +368,7 @@ class Validator:
     def validate_correctness_mssql(
         self,
         dataset_name: str,
-        database_name: str,
+        database_name: Optional[str] = None,
         tables: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
@@ -371,7 +377,7 @@ class Validator:
 
         Args:
             dataset_name: BigQuery dataset name
-            database_name: SQL Server database name (used for listing tables)
+            database_name: Optional SQL Server database name (used for listing tables, if None uses connection string DB)
             tables: Optional list of table names to validate (if None, validate all)
 
         Returns:
@@ -383,15 +389,18 @@ class Validator:
                 "message": "MSSQL client not provided for MSSQL validation",
             }
 
-        logger.info(f"Starting MSSQL correctness validation for dataset: {dataset_name}")
+        logger.info(
+            f"Starting MSSQL correctness validation for dataset: {dataset_name}"
+        )
 
         if tables is None:
             try:
                 tables = self.mssql_client.list_tables(database_name)
             except Exception as e:
+                db_msg = f" in SQL Server DB {database_name}" if database_name else ""
                 return {
                     "status": "failed",
-                    "message": f"Failed to list tables in SQL Server DB {database_name}: {e}",
+                    "message": f"Failed to list tables{db_msg}: {e}",
                 }
 
         results = {
@@ -414,8 +423,13 @@ class Validator:
                 mssql_schema = {}
 
             # Get BQ schema
-            bq_table_info = self.bigquery_client.get_table_info(dataset_name, table_name)
-            bq_schema = {field["name"]: field["type"] for field in bq_table_info.get("schema", [])}
+            bq_table_info = self.bigquery_client.get_table_info(
+                dataset_name, table_name
+            )
+            bq_schema = {
+                field["name"]: field["type"]
+                for field in bq_table_info.get("schema", [])
+            }
 
             schema_match = self._compare_schemas(mssql_schema, bq_schema)
 
@@ -829,7 +843,9 @@ class Validator:
             mssql_cols = set(mssql_rows[0].keys())
             bq_cols = set(bq_df.columns)
             if mssql_cols != bq_cols:
-                logger.warning(f"Column name mismatch between MSSQL and BQ for {table_name}")
+                logger.warning(
+                    f"Column name mismatch between MSSQL and BQ for {table_name}"
+                )
                 return False
 
             return True

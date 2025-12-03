@@ -114,7 +114,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
         return {}
 
 
-def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReader, Optional[MSSQLClient]]:
+def initialize_clients(
+    config: Dict[str, Any],
+) -> tuple[BigQueryClient, CSVReader, Optional[MSSQLClient]]:
     """
     Initialize BigQuery client and CSV reader based on configuration
 
@@ -167,11 +169,11 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
 
                     client_sm = secretmanager.SecretManagerServiceClient()
                     response = client_sm.access_secret_version(name=secret_name)
-                    connection_string = (
-                        response.payload.data.decode("UTF-8")
-                    )
+                    connection_string = response.payload.data.decode("UTF-8")
                 except Exception as e:
-                    logger.error(f"Failed to fetch MSSQL connection string from Secret Manager: {e}")
+                    logger.error(
+                        f"Failed to fetch MSSQL connection string from Secret Manager: {e}"
+                    )
                     connection_string = None
 
             # Allow an explicit connection_string in the config to override
@@ -196,7 +198,9 @@ def initialize_clients(config: Dict[str, Any]) -> tuple[BigQueryClient, CSVReade
                     if not ok:
                         msg = "MSSQL client connection test failed"
                         if m.get("fail_on_connection_test"):
-                            logger.error(msg + ". Aborting initialization as configured.")
+                            logger.error(
+                                msg + ". Aborting initialization as configured."
+                            )
                             raise RuntimeError(msg)
                         else:
                             logger.error(msg + ". Continuing without MSSQL client.")
@@ -610,7 +614,7 @@ def main():
     parser.add_argument(
         "--validate-source",
         choices=["gcs", "mssql"],
-        default="gcs",
+        default="mssql",
         help="Source to validate from: 'gcs' (CSV files) or 'mssql' (SQL Server)",
     )
     parser.add_argument(
@@ -647,7 +651,9 @@ def main():
     # If MSSQL validation is requested, ensure MSSQL client is available
     if args.validate_source == "mssql":
         if not mssql_client:
-            logger.error("MSSQL validation requested but MSSQL configuration is missing")
+            logger.error(
+                "MSSQL validation requested but MSSQL configuration is missing"
+            )
             return 1
         try:
             # import MSSQL-aware validator
@@ -756,7 +762,10 @@ def main():
             )
 
             validation_results = {
-                "status": "success" if completeness["status"] == "success" and correctness["status"] == "success" else "warning",
+                "status": "success"
+                if completeness["status"] == "success"
+                and correctness["status"] == "success"
+                else "warning",
                 "service": args.service,
                 "table": args.table,
                 "completeness": completeness,
@@ -765,29 +774,43 @@ def main():
     else:
         # Validate all services
         if args.validate_source == "gcs":
-            validation_results = validate_results(validator, config, services, args.date)
+            validation_results = validate_results(
+                validator, config, services, args.date
+            )
         else:
             # MSSQL-based validation across services uses the MSSQL client database scope
-            validation_results = {"status": "success", "message": "Validation completed", "services": {}}
+            validation_results = {
+                "status": "success",
+                "message": "Validation completed",
+                "services": {},
+            }
             mssql_db = config.get("mssql", {}).get("database")
             for service in services:
                 service_name_for_dataset = service.replace("-", "_")
-                dataset_name = get_dataset_name(config, service_name_for_dataset).lower()
+                dataset_name = get_dataset_name(
+                    config, service_name_for_dataset
+                ).lower()
 
-                completeness = validator.validate_completeness_mssql(dataset_name, mssql_db)
-                correctness = validator.validate_correctness_mssql(dataset_name, mssql_db)
+                completeness = validator.validate_completeness_mssql(
+                    dataset_name, mssql_db
+                )
+                correctness = validator.validate_correctness_mssql(
+                    dataset_name, mssql_db
+                )
 
                 validation_results["services"][service] = {
                     "completeness": completeness,
                     "correctness": correctness,
                     "status": "success"
-                    if completeness.get("status") == "success" and correctness.get("status") == "success"
+                    if completeness.get("status") == "success"
+                    and correctness.get("status") == "success"
                     else "warning",
                 }
 
             # Collapse overall status
             overall_ok = all(
-                v["status"] == "success" for v in validation_results["services"].values()
+                v["status"] == "success"
+                for v in validation_results["services"].values()
             )
             if not overall_ok:
                 validation_results["status"] = "warning"

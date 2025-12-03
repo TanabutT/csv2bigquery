@@ -1,7 +1,8 @@
-import pyodbc
 import logging
-from typing import List, Optional, Any, Dict
 from os import getenv
+from typing import Any, Dict, List, Optional
+
+import pyodbc
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -25,7 +26,7 @@ class MSSQLClient:
             driver: ODBC driver
             timeout: Connection timeout in seconds
         """
-    
+
         # This client prefers an explicit ODBC-style connection string. If the
         # caller supplies the connection_string parameter it will be used, or
         # the class will attempt to read SQL_CONNECTION_STRING from the
@@ -100,21 +101,34 @@ class MSSQLClient:
     # --------------------------------------------------------
     # TABLE LISTING
     # --------------------------------------------------------
-    def list_tables(self, database_name: str) -> List[str]:
+    def list_tables(self, database_name: Optional[str] = None) -> List[str]:
         """
         Return list of table names in a SQL Server database.
+
+        Args:
+            database_name: Optional database name. If not provided, uses the database from the connection string.
         """
-        query = f"""
-        SELECT TABLE_NAME
-        FROM {database_name}.INFORMATION_SCHEMA.TABLES
-        WHERE TABLE_TYPE = 'BASE TABLE'
-        ORDER BY TABLE_NAME;
-        """
+        # If database_name is not provided, use INFORMATION_SCHEMA without database qualifier
+        # This will use the database specified in the connection string
+        if database_name:
+            query = f"""
+            SELECT TABLE_NAME
+            FROM {database_name}.INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_TYPE = 'BASE TABLE'
+            ORDER BY TABLE_NAME;
+            """
+        else:
+            query = """
+            SELECT TABLE_NAME
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_TYPE = 'BASE TABLE'
+            ORDER BY TABLE_NAME;
+            """
 
         rows = self._execute_query(query)
         tables = [row[0] for row in rows]
 
-        logger.info(f"Found {len(tables)} tables in SQL Server database {database_name}")
+        logger.info(f"Found {len(tables)} tables in SQL Server database")
         return tables
 
     # --------------------------------------------------------
@@ -158,7 +172,9 @@ class MSSQLClient:
             logger.error(f"Failed to get schema for {table_name}: {e}")
             return {}
 
-    def get_sample_rows(self, table_name: str, sample_size: int = 100) -> Optional[list]:
+    def get_sample_rows(
+        self, table_name: str, sample_size: int = 100
+    ) -> Optional[list]:
         """
         Return a sample of rows from the table as list of dicts.
 
