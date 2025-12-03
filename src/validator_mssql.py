@@ -1,5 +1,5 @@
 """
-Validation module for verifying data integrity between mssql source and BigQuery destination
+Validation module for verifying data integrity between CSV source and BigQuery destination
 """
 
 import logging
@@ -7,108 +7,114 @@ import random
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+
 try:
     from bigquery_client import BigQueryClient
+    from CSV_reader import CSVReader
 except ImportError:
     from src.bigquery_client import BigQueryClient
+    from src.CSV_reader import CSVReader
 
 logger = logging.getLogger(__name__)
 
 
-class Validator_mssql:
+class Validator:
     """Validator for checking completeness and correctness of ETL process"""
 
     def __init__(
         self,
         bigquery_client: BigQueryClient,
-        mssql_client: MSSQLClient,
+        csv_reader: CSVReader,
         sample_size: int = 100,
     ):
         """
-        Initialize validator with BigQuery client and mssql client
+        Initialize validator with BigQuery client and CSV reader
 
         Args:
             bigquery_client: BigQuery client instance
-            mssql_client: mssql client instance
+            csv_reader: CSV reader instance
             sample_size: Number of rows to sample for validation
         """
         self.bigquery_client = bigquery_client
-        self.mssql_client = mssql_client
+        self.csv_reader = csv_reader
         self.sample_size = sample_size
         self.validation_results = {}
 
-    def validate_completeness_mssql(
-        self, dataset_name: str, database_name: str
+    def validate_completeness_gcs(
+        self, dataset_name: str, gcs_path: str
     ) -> Dict[str, Any]:
         """
-        Validate completeness of ETL process using SQL Server as source.
+        Validate completeness of ETL process with GCS source
 
         Args:
             dataset_name: BigQuery dataset name
-            database_name: SQL Server database name
+            gcs_path: GCS path containing CSV files
 
         Returns:
             Dictionary with validation results
         """
         logger.info(f"Starting completeness validation for dataset: {dataset_name}")
 
-        # Get list of tables from SQL Server
-        sql_tables = self.mssql_client.list_tables(database_name)
-        if not sql_tables:
+        # Get list of CSV files in GCS
+        csv_files = self.csv_reader.list_csv_files_in_gcs(gcs_path)
+        if not csv_files:
             return {
                 "status": "failed",
-                "message": "No tables found in SQL Server database",
-                "details": {"database_name": database_name},
+                "message": "No CSV files found in GCS path",
+                "details": {"gcs_path": gcs_path},
             }
 
+        # Check each CSV file against its corresponding BigQuery table
         results = {
             "status": "success",
             "message": "Completeness validation completed",
-            "details": {"total_tables": len(sql_tables), "table_results": []},
+            "details": {"total_files": len(csv_files), "file_results": []},
         }
 
-        all_tables_processed = True
-        total_sql_rows = 0
+        all_files_processed = True
+        total_csv_rows = 0
         total_bq_rows = 0
 
-        for table_name in sql_tables:
-            # Get row count from SQL Server
-            sql_row_count = self.mssql_client.get_row_count(table_name)
+        for csv_file in csv_files:
+            # Extract table name from file name
+            table_name = self._extract_table_name_from_path(csv_file)
+            if not table_name:
+                continue
 
-            # Get row count from BigQuery
+            # Get row counts
+            csv_row_count = self.csv_reader.get_row_count_gcs(csv_file)
             bq_row_count = self.bigquery_client.get_row_count(dataset_name, table_name)
-
-            total_sql_rows += sql_row_count
+            total_csv_rows += csv_row_count
             total_bq_rows += bq_row_count
 
-            # Check if table exists in BigQuery
+            # Check if table exists and row counts match
             table_exists = self.bigquery_client.table_exists(dataset_name, table_name)
-            rows_match = sql_row_count == bq_row_count
+            rows_match = csv_row_count == bq_row_count
 
-            table_result = {
+            file_result = {
+                "file_path": csv_file,
                 "table_name": table_name,
                 "table_exists": table_exists,
-                "sql_rows": sql_row_count,
+                "csv_rows": csv_row_count,
                 "bq_rows": bq_row_count,
                 "rows_match": rows_match,
                 "status": "success" if rows_match else "failed",
             }
 
-            results["details"]["table_results"].append(table_result)
+            results["details"]["file_results"].append(file_result)
 
             if not rows_match:
-                all_tables_processed = False
+                all_files_processed = False
 
-        results["details"]["all_tables_processed"] = all_tables_processed
-        results["details"]["total_sql_rows"] = total_sql_rows
+        results["details"]["all_files_processed"] = all_files_processed
+        results["details"]["total_csv_rows"] = total_csv_rows
         results["details"]["total_bq_rows"] = total_bq_rows
 
-        if not all_tables_processed:
+        if not all_files_processed:
             results["status"] = "warning"
-            results["message"] = "Some tables have row count mismatches"
+            results["message"] = "Some files have row count mismatches"
 
         return results
-
 
     def validate_completeness_local(
         self, dataset_name: str, local_path: str
@@ -126,7 +132,7 @@ class Validator_mssql:
         logger.info(f"Starting completeness validation for dataset: {dataset_name}")
 
         # Get list of CSV files in local directory
-        csv_files = self.mssql_client.list_csv_files_local(local_path)
+        csv_files = self.csv_reader.list_csv_files_local(local_path)
         if not csv_files:
             return {
                 "status": "failed",
@@ -152,7 +158,7 @@ class Validator_mssql:
                 continue
 
             # Get row counts
-            csv_row_count = self.mssql_client.get_row_count_local(csv_file)
+            csv_row_count = self.csv_reader.get_row_count_local(csv_file)
             bq_row_count = self.bigquery_client.get_row_count(dataset_name, table_name)
             total_csv_rows += csv_row_count
             total_bq_rows += bq_row_count
@@ -190,7 +196,7 @@ class Validator_mssql:
         self, dataset_name: str, gcs_path: str
     ) -> Dict[str, Any]:
         """
-        Validate correctness of ETL process with mssql source
+        Validate correctness of ETL process with GCS source
 
         Args:
             dataset_name: BigQuery dataset name
@@ -202,7 +208,7 @@ class Validator_mssql:
         logger.info(f"Starting correctness validation for dataset: {dataset_name}")
 
         # Get list of CSV files in GCS
-        csv_files = self.mssql_client.list_csv_files_in_gcs(gcs_path)
+        csv_files = self.csv_reader.list_csv_files_in_gcs(gcs_path)
         if not csv_files:
             return {
                 "status": "failed",
@@ -230,7 +236,7 @@ class Validator_mssql:
                 continue
 
             # Get schemas and compare
-            csv_schema = self.mssql_client.extract_schema_from_csv_gcs(csv_file)
+            csv_schema = self.csv_reader.extract_schema_from_csv_gcs(csv_file)
             bq_table_info = self.bigquery_client.get_table_info(
                 dataset_name, table_name
             )
@@ -284,7 +290,7 @@ class Validator_mssql:
         logger.info(f"Starting correctness validation for dataset: {dataset_name}")
 
         # Get list of CSV files in local directory
-        csv_files = self.mssql_client.list_csv_files_local(local_path)
+        csv_files = self.csv_reader.list_csv_files_local(local_path)
         if not csv_files:
             return {
                 "status": "failed",
@@ -312,7 +318,7 @@ class Validator_mssql:
                 continue
 
             # Get schemas and compare
-            csv_schema = self.mssql_client.extract_schema_from_csv_local(csv_file)
+            csv_schema = self.csv_reader.extract_schema_from_csv_local(csv_file)
             bq_table_info = self.bigquery_client.get_table_info(
                 dataset_name, table_name
             )
@@ -429,7 +435,7 @@ class Validator_mssql:
         logger.info(f"Starting completeness validation for table: {table_name}")
 
         # Get row count from CSV
-        csv_row_count = self.mssql_client.get_row_count_gcs(gcs_path)
+        csv_row_count = self.csv_reader.get_row_count_gcs(gcs_path)
 
         # Get row count from BigQuery
         bq_row_count = self.bigquery_client.get_row_count(dataset_name, table_name)
@@ -481,7 +487,7 @@ class Validator_mssql:
             }
 
         # Get schemas and compare
-        csv_schema = self.mssql_client.extract_schema_from_csv_gcs(gcs_path)
+        csv_schema = self.csv_reader.extract_schema_from_csv_gcs(gcs_path)
         bq_table_info = self.bigquery_client.get_table_info(dataset_name, table_name)
         bq_schema = {
             field["name"]: field["type"] for field in bq_table_info.get("schema", [])
@@ -579,7 +585,7 @@ class Validator_mssql:
         """
         try:
             # Get sample data from CSV
-            csv_df = self.mssql_client.read_csv_to_dataframe_gcs(
+            csv_df = self.csv_reader.read_csv_to_dataframe_gcs(
                 gcs_path, sample_size=self.sample_size
             )
             if csv_df.empty:
@@ -624,7 +630,7 @@ class Validator_mssql:
         """
         try:
             # Get sample data from CSV
-            csv_df = self.mssql_client.read_csv_to_dataframe_local(
+            csv_df = self.csv_reader.read_csv_to_dataframe_local(
                 local_path, sample_size=self.sample_size
             )
             if csv_df.empty:
